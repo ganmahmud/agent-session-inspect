@@ -1,0 +1,17 @@
+{
+  "name": "agent-session-inspect",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agent-session-inspect": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "node --no-warnings src/cli.ts",
+    "test": "node --no-warnings --test test/*.test.ts",
+    "check": "node --no-warnings --check src/cli.ts && node --no-warnings --check src/codex.ts && node --no-warnings --check src/catalog.ts"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}
