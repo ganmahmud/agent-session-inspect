@@ -252,7 +252,7 @@ function applyTitles(sessions: Iterable<MutableSession>, catalogTitles: CatalogT
       session.displayTitle = session.titleFromLog;
     }
     delete session.titleFromLog;
-    delete session.relationshipKeys;
+    Reflect.deleteProperty(session, 'relationshipKeys');
     session.cliVersions.sort();
     session.sourceFiles.sort();
     session.relationships.sort((a, b) => `${a.type}:${a.sessionId}`.localeCompare(`${b.type}:${b.sessionId}`));

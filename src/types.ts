@@ -88,3 +88,118 @@ export interface CatalogTitle {
   rolloutPath?: string;
   source: 'provider_catalog';
 }
+
+export interface ToolCallDetail {
+  id: string;
+  name: string;
+  kind: 'function' | 'custom' | 'exec' | 'mcp' | 'patch' | 'unknown';
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  status?: string;
+  input?: string;
+  output?: string;
+  source?: SourceReference;
+}
+
+export interface EditDetail {
+  id: string;
+  timestamp?: string;
+  status?: string;
+  files: Array<{ path: string; operation?: string; diff?: string }>;
+  source?: SourceReference;
+}
+
+export interface ModelRequestDetail {
+  id: string;
+  timestamp?: string;
+  usage: TokenUsage;
+  totalUsage?: TokenUsage;
+  cumulativeTokenDelta?: number;
+  evidence: 'reported_snapshot';
+  source: SourceReference;
+}
+
+export interface TimeBreakdown {
+  durationMs?: number;
+  measuredToolMs: number;
+  otherElapsedMs?: number;
+  source: 'task_complete' | 'timestamps' | 'unavailable';
+  explanation: string;
+}
+
+export interface ModelConfiguration {
+  name?: string;
+  provider?: string;
+  source: 'turn_context' | 'thread_settings' | 'unavailable';
+  observedAt?: string;
+}
+
+export interface TaskTiming {
+  id?: string;
+  startedAt?: string;
+  completedAt?: string;
+  status: 'completed' | 'aborted' | 'open';
+  durationMs?: number;
+  timeToFirstTokenMs?: number;
+}
+
+export interface ReplyActivity {
+  association: 'source_order';
+  startedAt?: string;
+  completedAt?: string;
+  model: ModelConfiguration;
+  modelRequests: ModelRequestDetail[];
+  tools: ToolCallDetail[];
+  edits: EditDetail[];
+  breakdown: TimeBreakdown;
+  task?: TaskTiming;
+}
+
+export interface ConversationEntry {
+  id: string;
+  role: 'user' | 'assistant';
+  timestamp?: string;
+  text: string;
+  phase?: string;
+  source: SourceReference;
+  activity?: ReplyActivity;
+}
+
+export interface UsageSnapshot {
+  id: string;
+  timestamp?: string;
+  usage: TokenUsage;
+  modelContextWindow?: number;
+  source: SourceReference;
+  evidence: 'reported_snapshot';
+}
+
+export interface SessionUsage {
+  latest?: UsageSnapshot;
+  snapshots: UsageSnapshot[];
+  modelStepTotal: TokenUsage;
+  modelStepCount: number;
+  evidence: 'reported_snapshot';
+}
+
+export interface DebugMessage {
+  id: string;
+  role: string;
+  timestamp?: string;
+  text: string;
+  source: SourceReference;
+}
+
+export interface SessionDebug {
+  hiddenMessages: DebugMessage[];
+  unattachedActivities: ReplyActivity[];
+  malformedRecords: number;
+  unknownRecords: number;
+}
+
+export interface SessionDetail extends SessionInventory {
+  conversation: ConversationEntry[];
+  usage: SessionUsage;
+  debug: SessionDebug;
+}

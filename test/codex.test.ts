@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { readCodexCatalog } from '../src/catalog.ts';
 import { scanCodex } from '../src/codex.ts';
+import { readCodexSessionDetail } from '../src/detail.ts';
 
 const sessionOne = '11111111-1111-1111-1111-111111111111';
 const sessionTwo = '22222222-2222-2222-2222-222222222222';
@@ -125,4 +126,68 @@ test('CLI asks for an ID or file path when a title is ambiguous', () => {
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('assembles a visible conversation with source-order activity and exact model-step usage', async () => {
+	const directory = tempDirectory();
+	try {
+		const log = writeLog(directory, 'detail.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('turn_context', { model: 'gpt-5.6-terra' }, '2026-08-12T09:59:59.000Z'),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-1' }, '2026-08-12T10:00:00.000Z'),
+			jsonLine('event_msg', { type: 'user_message', message: 'Please inspect this run.' }, '2026-08-12T10:00:01.000Z'),
+			jsonLine('response_item', { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Hidden instruction' }] }, '2026-08-12T10:00:01.100Z'),
+			jsonLine('response_item', { type: 'function_call', call_id: 'call-1', name: 'exec', arguments: '{"cmd":"git status"}' }, '2026-08-12T10:00:02.000Z'),
+			jsonLine('response_item', { type: 'function_call_output', call_id: 'call-1', output: 'clean' }, '2026-08-12T10:00:03.000Z'),
+			jsonLine('event_msg', { type: 'exec_command_end', call_id: 'call-1', duration: { secs: 0, nanos: 500000000 }, status: 'completed', aggregated_output: 'clean' }, '2026-08-12T10:00:03.000Z'),
+			jsonLine('event_msg', { type: 'token_count', info: { last_token_usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 3, total_tokens: 13 }, total_token_usage: { input_tokens: 10, cached_input_tokens: 4, output_tokens: 3, total_tokens: 13 }, model_context_window: 100 } }, '2026-08-12T10:00:03.100Z'),
+			jsonLine('event_msg', { type: 'agent_message', message: 'The run is clean.', phase: 'final_answer' }, '2026-08-12T10:00:04.000Z'),
+			jsonLine('event_msg', { type: 'patch_apply_end', call_id: 'patch-1', status: 'completed', changes: { '/repo/a.ts': { type: 'update', unified_diff: '@@ -1 +1 @@' } } }, '2026-08-12T10:00:05.000Z'),
+			jsonLine('event_msg', { type: 'task_complete', turn_id: 'turn-1', duration_ms: 6000, time_to_first_token_ms: 1000 }, '2026-08-12T10:00:06.000Z'),
+		]);
+		const scan = await scanCodex(log);
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		assert.deepEqual(detail.conversation.map((message) => message.role), ['user', 'assistant']);
+		const reply = detail.conversation[1];
+		assert.equal(reply.activity?.model.name, 'gpt-5.6-terra');
+		assert.equal(reply.activity?.association, 'source_order');
+		assert.equal(reply.activity?.modelRequests[0].evidence, 'reported_snapshot');
+		assert.equal(reply.activity?.tools.find((tool) => tool.id === 'call-1')?.durationMs, 500);
+		assert.equal(reply.activity?.breakdown.durationMs, 6000);
+		assert.equal(reply.activity?.breakdown.source, 'task_complete');
+		assert.equal(detail.usage.latest?.modelContextWindow, 100);
+		assert.equal(detail.usage.modelStepTotal.totalTokens, 13);
+		assert.equal(detail.debug.hiddenMessages[0]?.text, 'Hidden instruction');
+		assert.deepEqual(detail.debug.unattachedActivities[0]?.edits[0].files[0], { path: '/repo/a.ts', operation: 'update', diff: '@@ -1 +1 @@' });
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('falls back to legacy response messages and merges overlapping tool time', async () => {
+	const directory = tempDirectory();
+	try {
+		const log = writeLog(directory, 'legacy-detail.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'legacy' }, '2026-08-12T10:00:00.000Z'),
+			jsonLine('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Legacy prompt' }] }, '2026-08-12T10:00:01.000Z'),
+			jsonLine('response_item', { type: 'function_call', call_id: 'a', name: 'exec', arguments: '{}' }, '2026-08-12T10:00:01.000Z'),
+			jsonLine('response_item', { type: 'function_call', call_id: 'b', name: 'exec', arguments: '{}' }, '2026-08-12T10:00:02.000Z'),
+			jsonLine('event_msg', { type: 'exec_command_end', call_id: 'a', duration: { secs: 3, nanos: 0 } }, '2026-08-12T10:00:04.000Z'),
+			jsonLine('event_msg', { type: 'exec_command_end', call_id: 'b', duration: { secs: 3, nanos: 0 } }, '2026-08-12T10:00:05.000Z'),
+			jsonLine('event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: 8 }, total_token_usage: { total_tokens: 8 } } }, '2026-08-12T10:00:05.100Z'),
+			jsonLine('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Legacy response' }] }, '2026-08-12T10:00:05.500Z'),
+			jsonLine('event_msg', { type: 'task_complete', turn_id: 'legacy', duration_ms: 6000 }, '2026-08-12T10:00:06.000Z'),
+		]);
+		const scan = await scanCodex(log);
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		const activity = detail.conversation[1].activity!;
+		assert.deepEqual(detail.conversation.map((message) => message.text), ['Legacy prompt', 'Legacy response']);
+		assert.equal(activity.modelRequests[0].usage.totalTokens, 8);
+		assert.equal(activity.breakdown.measuredToolMs, 4000);
+		assert.equal(activity.breakdown.otherElapsedMs, 2000);
+		assert.match(activity.breakdown.explanation, /unclassified/);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
 });
