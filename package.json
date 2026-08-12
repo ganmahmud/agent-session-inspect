@@ -1,17 +1,29 @@
 {
-  "name": "agent-session-inspect",
+  "name": "@ganmahmud/agent-session-inspect",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "bin": {
-    "agent-session-inspect": "./src/cli.ts"
+    "agent-session-inspect": "./dist/cli/src/cli.js"
   },
   "scripts": {
     "start": "node --no-warnings src/cli.ts",
+    "dashboard:dev": "npm run dev --prefix src/dashboard",
+    "dashboard:check": "npm run check --prefix src/dashboard",
+    "build:cli": "./src/dashboard/node_modules/.bin/tsc -p tsconfig.build.json",
+    "build:dashboard": "npm run build --prefix src/dashboard",
+    "build": "npm run build:cli && npm run build:dashboard",
+    "prepack": "npm run build",
     "test": "node --no-warnings --test test/*.test.ts",
-    "check": "node --no-warnings --check src/cli.ts && node --no-warnings --check src/codex.ts && node --no-warnings --check src/catalog.ts"
+    "check": "node --no-warnings --check src/cli.ts && node --no-warnings --check src/codex.ts && node --no-warnings --check src/catalog.ts && node --no-warnings --check src/detail.ts && node --no-warnings --check src/report.ts"
   },
   "engines": {
     "node": ">=22.13.0"
-  }
+  },
+  "files": [
+    "README.md",
+    "dist/cli",
+    "dist/dashboard",
+    "src/dashboard/package.json"
+  ]
 }
