@@ -48,3 +48,7 @@ npm start
 # Run Web Dashboard dev server
 npm run dashboard:dev
 ```
+
+## License
+
+[MIT License](LICENSE) © [Gan Mahmud](https://github.com/ganmahmud)

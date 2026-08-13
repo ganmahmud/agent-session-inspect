@@ -1,6 +1,26 @@
 {
   "name": "@ganmahmud/agent-session-inspect",
   "version": "0.1.0",
+  "description": "Local, read-only inspection tool, TUI, and Web dashboard for Codex agent session logs",
+  "author": "Gan Mahmud",
+  "license": "MIT",
+  "homepage": "https://github.com/ganmahmud/agent-session-inspect#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ganmahmud/agent-session-inspect.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ganmahmud/agent-session-inspect/issues"
+  },
+  "keywords": [
+    "codex",
+    "agent",
+    "tui",
+    "dashboard",
+    "session-inspector",
+    "llm-logs",
+    "sveltekit"
+  ],
   "private": false,
   "type": "module",
   "bin": {
@@ -22,6 +42,7 @@
   },
   "files": [
     "README.md",
+    "LICENSE",
     "dist/cli",
     "dist/dashboard",
     "dashboard/package.json"
