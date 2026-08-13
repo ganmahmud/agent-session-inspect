@@ -1,44 +1,50 @@
-# Agent Session Inspect
+# Agent Session Inspect ⚡
 
-Local, read-only inspection for Codex session logs.
+Local, read-only inspection tool and dashboards for Codex agent sessions.
 
-## Use as a CLI
+## Quick Start
 
-Requires Node.js 22.13 or newer. Once the package is published:
+Requires Node.js >= 22.13. Run without installing:
 
 ```sh
-# Run once without installing globally
+# Interactive Terminal TUI Dashboard (Default)
+npx @ganmahmud/agent-session-inspect
+
+# Interactive Web Dashboard (--web)
+npx @ganmahmud/agent-session-inspect --web
+
+# Terminal Scan Summary
 npx @ganmahmud/agent-session-inspect codex scan
-npx @ganmahmud/agent-session-inspect inspect "Build agent session profiler"
-npx @ganmahmud/agent-session-inspect serve
 
-# Or install globally
-npm install -g @ganmahmud/agent-session-inspect
-agent-session-inspect codex scan
-agent-session-inspect serve --port 4320
+# Inspect Specific Session
+npx @ganmahmud/agent-session-inspect inspect "Session Title or ID"
 ```
 
-Session lists prefer Codex's own task title from its local catalog, then a
-title recorded in the JSONL. Raw rollout filenames are shown only with
-`--verbose`.
-
-`serve` starts the packaged SvelteKit dashboard at `http://127.0.0.1:4318`. It
-reads the local logs directly and never modifies them.
-
-## Local checkout and dashboard development
+## Global Installation
 
 ```sh
-# CLI from this checkout
-npm start -- codex scan
-npm start -- serve
+npm install -g @ganmahmud/agent-session-inspect
 
-# SvelteKit development server with hot reload
-cd dashboard
-bun install
-bun run dev
+# Launch Terminal TUI
+agent-session-inspect
+
+# Launch Web Dashboard
+agent-session-inspect web --port 4318
 ```
 
-After dashboard dependencies are installed, `npm run dashboard:dev` also starts
-the SvelteKit dev server from the repository root. Build the distributable
-dashboard into `dist/dashboard` with `npm run build:dashboard`; `npm pack` and
-`npm publish` run it automatically via `prepack`.
+## Features
+
+- **⚡ Terminal TUI Dashboard (`tui` / `--ui`)**: Dual-pane keyboard & mouse interface with live session filtering, turn-by-turn activity logs, tool execution metrics, and raw metadata.
+- **🌐 Web Dashboard (`web` / `--web`)**: SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, timeline visualization, and rich markdown rendering.
+- **📊 Terminal & JSON Summaries**: Quick scan tables or JSON outputs for CI/CD scripting (`--format json`).
+- **🔒 100% Local & Read-Only**: Parses local `~/.codex/sessions` logs directly without modifying data.
+
+## Local Development
+
+```sh
+# Run CLI / TUI from checkout
+npm start
+
+# Run Web Dashboard dev server
+npm run dashboard:dev
+```

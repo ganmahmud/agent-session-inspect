@@ -31,15 +31,16 @@ interface Arguments {
   format: 'text' | 'json';
   verbose: boolean;
   ui: boolean;
+  web: boolean;
   port: number;
 }
 
 function usage(): string {
   return `Usage:
-  agent-session-inspect tui [path]
-  agent-session-inspect codex scan [path] [--format text|json] [--verbose] [--ui]
-  agent-session-inspect inspect <title|session-id|file> [--format text|json] [--verbose]
-  agent-session-inspect serve [path] [--port 4318]`;
+  agent-session-inspect tui [path]                      # Interactive terminal dashboard
+  agent-session-inspect web [path] [--port 4318]         # Interactive web dashboard (--web)
+  agent-session-inspect codex scan [path] [--format json] # Terminal scan report
+  agent-session-inspect inspect <title|id|file>         # Detailed session inspect`;
 }
 
 function parse(argv: string[]): Arguments {
@@ -47,6 +48,7 @@ function parse(argv: string[]): Arguments {
   let format: Arguments['format'] = 'text';
   let verbose = false;
   let ui = false;
+  let web = false;
   let port = 4318;
   const positional: string[] = [];
   for (let index = 0; index < values.length; index += 1) {
@@ -59,6 +61,8 @@ function parse(argv: string[]): Arguments {
       verbose = true;
     } else if (value === '--ui' || value === '--tui') {
       ui = true;
+    } else if (value === '--web') {
+      web = true;
     } else if (value === '--port') {
       const next = Number(values[++index]);
       if (!Number.isInteger(next) || next < 0 || next > 65535) throw new Error('--port must be an integer from 0 to 65535');
@@ -70,11 +74,13 @@ function parse(argv: string[]): Arguments {
     }
   }
 
-  if (positional[0] === 'tui' || positional[0] === 'ui') return { command: 'tui', target: positional[1], format, verbose, ui: true, port };
-  if (positional[0] === 'codex' && positional[1] === 'scan') return { command: 'scan', target: positional[2], format, verbose, ui, port };
-  if (positional[0] === 'inspect' && positional[1]) return { command: 'inspect', target: positional.slice(1).join(' '), format, verbose, ui, port };
-  if (positional[0] === 'serve') return { command: 'serve', target: positional[1], format, verbose, ui, port };
-  if (!positional.length) return { command: 'tui', target: undefined, format, verbose, ui: true, port };
+  if (positional[0] === 'web' || web) return { command: 'serve', target: positional[0] === 'web' ? positional[1] : positional[0], format, verbose, ui, web: true, port };
+  if (positional[0] === 'tui' || positional[0] === 'ui' || ui) return { command: 'tui', target: positional[0] === 'tui' || positional[0] === 'ui' ? positional[1] : positional[0], format, verbose, ui: true, web, port };
+  if (positional[0] === 'codex' && positional[1] === 'scan') return { command: 'scan', target: positional[2], format, verbose, ui, web, port };
+  if (positional[0] === 'scan') return { command: 'scan', target: positional[1], format, verbose, ui, web, port };
+  if (positional[0] === 'inspect' && positional[1]) return { command: 'inspect', target: positional.slice(1).join(' '), format, verbose, ui, web, port };
+  if (positional[0] === 'serve') return { command: 'serve', target: positional[1], format, verbose, ui, web: true, port };
+  if (!positional.length) return { command: 'tui', target: undefined, format, verbose, ui: true, web, port };
   throw new Error(usage());
 }
 
@@ -96,6 +102,23 @@ async function resultFor(path: string): Promise<ScanResult> {
 
 async function main(): Promise<void> {
   const args = parse(process.argv);
+  if (args.command === 'serve' || args.web) {
+    const dashboard = join(packageRoot, 'dashboard');
+    const sessions = args.target ?? defaultSessionsPath;
+    console.log(`\n  ⚡ Agent Session Inspect Web Dashboard\n  http://127.0.0.1:${args.port}\n\n  Local-only · read-only · Ctrl+C to stop\n`);
+    const entry = join(packageRoot, 'dist', 'dashboard', 'index.js');
+    const built = existsSync(entry);
+    const child = spawn(built ? process.execPath : process.env.BUN_BINARY ?? 'bun', built ? [entry] : ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(args.port)], {
+      cwd: dashboard,
+      stdio: 'inherit',
+      env: { ...process.env, ASI_SESSIONS_PATH: sessions, HOST: '127.0.0.1', PORT: String(args.port) },
+    });
+    await new Promise<void>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', (code) => (code === 0 || code === null ? resolve() : reject(new Error(`Dashboard exited with code ${code}`))));
+    });
+    return;
+  }
   if (args.command === 'tui' || args.ui) {
     const result = await resultFor(args.target ?? defaultSessionsPath);
     await startTui(result);
