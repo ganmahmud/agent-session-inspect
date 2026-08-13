@@ -19,5 +19,5 @@ export default defineConfig({
 		})
 	],
 	server: { fs: { allow: [parentSource] } },
-	ssr: { noExternal: true, external: ['sanitize-html'] }
+	ssr: { noExternal: true }
 });
