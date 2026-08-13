@@ -64,8 +64,8 @@
 		<div class="mx-auto grid max-w-[1540px] grid-cols-1 lg:grid-cols-[310px_minmax(0,1fr)]">
 			<!-- Header Left: App Branding (matches sidebar width & right border) -->
 			<div class="flex items-center gap-3 border-b border-(--line) bg-(--panel) px-4 py-3 lg:border-b-0 lg:border-r lg:border-(--line)">
-				<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-(--accent) text-white shadow-sm">
-					<Activity class="h-4 w-4" />
+				<div class="flex h-7.5 w-7.5 shrink-0 items-center justify-center rounded-lg bg-linear-to-br from-cyan-500 to-emerald-400 text-slate-950 shadow-xs">
+					<Activity class="h-4.5 w-4.5 stroke-[2.5]" />
 				</div>
 				<div class="min-w-0 flex-1">
 					<div class="flex items-center gap-2">
