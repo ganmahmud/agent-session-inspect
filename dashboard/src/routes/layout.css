@@ -1,41 +1,71 @@
 @import 'tailwindcss';
 
 :root {
-	/* Nordic Sand & Paper - High Contrast Light Palette */
-	--canvas: #f7f7f6;
+	/* Slate & Zinc - High-End Modern Light Palette */
+	--canvas: #f8fafc;
 	--panel: #ffffff;
-	--panel-subtle: #eaeae5;
-	--field: #e2e2da;
-	--line: #d4d4cc;
+	--panel-subtle: #f1f5f9;
+	--field: #f8fafc;
+	--line: #e2e8f0;
+	--line-subtle: #f1f5f9;
 	--ink: #0f172a;
-	--muted: #475569;
-	--accent: #1e293b;
-	--accent-soft: #e2e8f0;
-	--accent-glow: rgba(30, 41, 59, 0.1);
-	--pill-active-bg: #1e293b;
+	--muted: #64748b;
+	--accent: #2563eb;
+	--accent-secondary: #0284c7;
+	--accent-soft: rgba(37, 99, 235, 0.08);
+	--accent-glow: rgba(37, 99, 235, 0.15);
+	--pill-active-bg: #0f172a;
 	--pill-active-text: #ffffff;
-	--danger: #991b1b;
+	--danger: #ef4444;
 	--danger-soft: #fef2f2;
-	--success: #166534;
-	--success-soft: #f0fdf4;
+	--success: #10b981;
+	--success-soft: #ecfdf5;
 	
+	--hard-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+	--hard-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+	--hard-shadow-lg: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+	--user-shadow: 0 1px 3px rgba(37, 99, 235, 0.06);
+	--agent-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+	--review-shadow: 0 1px 3px rgba(217, 119, 6, 0.06);
+
 	/* Muted Role Distinction Tokens - Light Mode */
-	--user-bg: #f1f5f9;
-	--user-border: #475569;
-	--user-badge-bg: #334155;
+	--user-bg: #eff6ff;
+	--user-border: #3b82f6;
+	--user-badge-bg: #2563eb;
 	--user-badge-text: #ffffff;
-	--user-glow: rgba(51, 65, 85, 0.05);
+	--user-glow: rgba(37, 99, 235, 0.08);
 
-	--agent-bg: #f8fafc;
-	--agent-border: #475569;
-	--agent-badge-bg: #1e293b;
+	--agent-bg: #ffffff;
+	--agent-border: #cbd5e1;
+	--agent-badge-bg: #475569;
 	--agent-badge-text: #ffffff;
-	--agent-glow: rgba(30, 41, 59, 0.05);
+	--agent-glow: rgba(71, 85, 105, 0.08);
 
-	--review-bg: #fffbe6;
-	--review-border: #b45309;
-	--review-badge-bg: #92400e;
+	--review-bg: #fffbeb;
+	--review-border: #f59e0b;
+	--review-badge-bg: #d97706;
 	--review-badge-text: #ffffff;
+
+	/* Token Allocation Category Tokens - Modern Light Mode */
+	--token-cached: #0d9488;
+	--token-cached-bg: #ccfbf1;
+	--token-cached-border: #5eead4;
+	--token-cached-text: #0f766e;
+
+	--token-input: #2563eb;
+	--token-input-bg: #dbeafe;
+	--token-input-border: #93c5fd;
+	--token-input-text: #1d4ed8;
+
+	--token-output: #ea580c;
+	--token-output-bg: #ffedd5;
+	--token-output-border: #fdba74;
+	--token-output-text: #c2410c;
+
+	--token-reasoning: #7c3aed;
+	--token-reasoning-bg: #f3e8ff;
+	--token-reasoning-border: #c084fc;
+	--token-reasoning-text: #6b21a8;
 }
 
 :root[data-theme='dark'] {
@@ -45,9 +75,11 @@
 	--panel-subtle: #212631;
 	--field: #1a1d26;
 	--line: #333a48;
+	--line-subtle: #272d3b;
 	--ink: #f8fafc;
 	--muted: #cbd5e1;
 	--accent: #cbd5e1;
+	--accent-secondary: #38bdf8;
 	--accent-soft: rgba(203, 213, 225, 0.16);
 	--accent-glow: rgba(203, 213, 225, 0.2);
 	--pill-active-bg: #334155;
@@ -56,6 +88,13 @@
 	--danger-soft: rgba(248, 113, 113, 0.15);
 	--success: #4ade80;
 	--success-soft: rgba(74, 222, 128, 0.15);
+
+	--hard-shadow: none;
+	--hard-shadow-sm: none;
+	--hard-shadow-lg: none;
+	--user-shadow: 0 1px 4px rgba(100, 116, 139, 0.08);
+	--agent-shadow: 0 1px 4px rgba(100, 116, 139, 0.08);
+	--review-shadow: none;
 
 	/* Muted Role Distinction Tokens - Dark Mode */
 	--user-bg: #151b26;
@@ -74,12 +113,33 @@
 	--review-border: #d97706;
 	--review-badge-bg: #b45309;
 	--review-badge-text: #fef3c7;
+
+	/* Token Allocation Category Tokens - Dark Mode */
+	--token-cached: #2dd4bf;
+	--token-cached-bg: rgba(45, 212, 191, 0.12);
+	--token-cached-border: rgba(45, 212, 191, 0.25);
+	--token-cached-text: #5eead4;
+
+	--token-input: #60a5fa;
+	--token-input-bg: rgba(96, 165, 250, 0.12);
+	--token-input-border: rgba(96, 165, 250, 0.25);
+	--token-input-text: #93c5fd;
+
+	--token-output: #fbbf24;
+	--token-output-bg: rgba(251, 191, 36, 0.12);
+	--token-output-border: rgba(251, 191, 36, 0.25);
+	--token-output-text: #fde047;
+
+	--token-reasoning: #c084fc;
+	--token-reasoning-bg: rgba(192, 132, 252, 0.12);
+	--token-reasoning-border: rgba(192, 132, 252, 0.25);
+	--token-reasoning-text: #e9d5ff;
 }
 
 html {
 	background: var(--canvas);
 	color: var(--ink);
-	font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+	font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 	font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 	-webkit-font-smoothing: antialiased;
 }
@@ -113,14 +173,14 @@ button, input {
 .theme-toggle {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
 	border: 1px solid var(--line);
 	border-radius: 8px;
-	padding: 6px 12px;
+	padding: 0;
 	color: var(--ink);
 	background: var(--panel-subtle);
-	font-size: 13px;
-	font-weight: 500;
 	cursor: pointer;
 	transition: all 0.2s ease;
 }
@@ -162,7 +222,7 @@ button, input {
 .session-row {
 	width: 100%;
 	border: 0;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 1px solid var(--line-subtle);
 	padding: 12px 14px;
 	color: var(--ink);
 	background: transparent;
@@ -175,7 +235,7 @@ button, input {
 }
 .session-row.active {
 	background: var(--panel-subtle);
-	box-shadow: inset 3px 0 0 var(--ink);
+	box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* Tabs */
@@ -203,7 +263,7 @@ button, input {
 	color: var(--ink);
 }
 .tab-btn.active {
-	border-color: var(--ink);
+	border-color: var(--accent);
 	color: var(--ink);
 	font-weight: 600;
 }
@@ -223,27 +283,27 @@ button, input {
 	transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 .chat-card:hover {
-	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.03);
+	box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
 }
 
-/* Distinct User Card (Muted Slate bar) */
+/* Distinct User Card */
 .chat-card.from-user {
 	background: var(--user-bg);
 	border-color: var(--line);
 	border-left: 4px solid var(--user-border);
-	box-shadow: 0 1px 4px var(--user-glow);
+	box-shadow: var(--user-shadow);
 }
 .chat-card.from-user .role-badge {
 	background: var(--user-badge-bg);
 	color: var(--user-badge-text);
 }
 
-/* Distinct Agent Card (Muted Charcoal Plum bar) */
+/* Distinct Agent Card */
 .chat-card.from-agent {
 	background: var(--agent-bg);
 	border-color: var(--line);
 	border-left: 4px solid var(--agent-border);
-	box-shadow: 0 1px 4px var(--agent-glow);
+	box-shadow: var(--agent-shadow);
 }
 .chat-card.from-agent .role-badge {
 	background: var(--agent-badge-bg);
@@ -255,6 +315,7 @@ button, input {
 	background: var(--review-bg);
 	border-color: var(--line);
 	border-left: 4px solid var(--review-border);
+	box-shadow: var(--review-shadow);
 }
 .chat-card.internal-review .role-badge {
 	background: var(--review-badge-bg);
@@ -277,7 +338,7 @@ button, input {
 	padding: 3px 9px;
 	border-radius: 99px;
 	font-size: 11px;
-	font-weight: 700;
+	font-weight: 600;
 	letter-spacing: 0.03em;
 	text-transform: uppercase;
 }
