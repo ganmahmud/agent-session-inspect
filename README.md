@@ -33,7 +33,7 @@ npm start -- codex scan
 npm start -- serve
 
 # SvelteKit development server with hot reload
-cd src/dashboard
+cd dashboard
 bun install
 bun run dev
 ```

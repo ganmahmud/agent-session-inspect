@@ -94,7 +94,7 @@ async function main(): Promise<void> {
     return;
   }
   if (args.command === 'serve') {
-    const dashboard = join(packageRoot, 'src', 'dashboard');
+    const dashboard = join(packageRoot, 'dashboard');
     const sessions = args.target ?? defaultSessionsPath;
     console.log(`\n  Agent Session Inspect dashboard\n  http://127.0.0.1:${args.port}\n\n  Local-only · read-only · Ctrl+C to stop\n`);
     const entry = join(packageRoot, 'dist', 'dashboard', 'index.js');

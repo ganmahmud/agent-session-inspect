@@ -195,6 +195,15 @@ function activityHasData(activity: PendingActivity): boolean {
   return activity.modelRequests.length > 0 || activity.tools.length > 0 || activity.edits.length > 0;
 }
 
+function isInternalReviewMessage(value: string): boolean {
+  const message = value.trimStart();
+  // ponytail: prefix match covers current guardian prompts; use structured provenance if Codex logs it later.
+  return message.startsWith('The following is the Codex agent history ') && (
+    message.includes('request action you are assessing') ||
+    message.includes('added since your last approval assessment')
+  );
+}
+
 export async function readCodexSessionDetail(session: SessionInventory): Promise<SessionDetail> {
   const useChatSurface = await hasCompleteChatSurface(session);
   const conversation: ConversationEntry[] = [];
@@ -251,7 +260,15 @@ export async function readCodexSessionDetail(session: SessionInventory): Promise
           discardPending();
           startPending(timestamp);
         }
-        const entry: ConversationEntry = { id: `${file}:${line}`, role, timestamp, text: visibleText, phase: text(payload.phase), source: provenance };
+        const entry: ConversationEntry = {
+          id: `${file}:${line}`,
+          role,
+          kind: role === 'user' && isInternalReviewMessage(visibleText) ? 'internal_review' : 'conversation',
+          timestamp,
+          text: visibleText,
+          phase: text(payload.phase),
+          source: provenance,
+        };
         if (role === 'assistant') {
           pending.model = currentModel;
           entry.activity = finalise(pending, timestamp);

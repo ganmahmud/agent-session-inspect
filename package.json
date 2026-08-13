@@ -8,10 +8,10 @@
   },
   "scripts": {
     "start": "node --no-warnings src/cli.ts",
-    "dashboard:dev": "npm run dev --prefix src/dashboard",
-    "dashboard:check": "npm run check --prefix src/dashboard",
-    "build:cli": "./src/dashboard/node_modules/.bin/tsc -p tsconfig.build.json",
-    "build:dashboard": "npm run build --prefix src/dashboard",
+    "dashboard:dev": "npm run dev --prefix dashboard",
+    "dashboard:check": "npm run check --prefix dashboard",
+    "build:cli": "./dashboard/node_modules/.bin/tsc -p tsconfig.build.json",
+    "build:dashboard": "npm run build --prefix dashboard",
     "build": "npm run build:cli && npm run build:dashboard",
     "prepack": "npm run build",
     "test": "node --no-warnings --test test/*.test.ts",
@@ -24,6 +24,6 @@
     "README.md",
     "dist/cli",
     "dist/dashboard",
-    "src/dashboard/package.json"
+    "dashboard/package.json"
   ]
 }

@@ -159,6 +159,7 @@ export interface ReplyActivity {
 export interface ConversationEntry {
   id: string;
   role: 'user' | 'assistant';
+  kind: 'conversation' | 'internal_review';
   timestamp?: string;
   text: string;
   phase?: string;

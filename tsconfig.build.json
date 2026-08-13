@@ -10,9 +10,9 @@
     "sourceMap": false,
     "declaration": false,
     "rewriteRelativeImportExtensions": true,
-    "typeRoots": ["./src/dashboard/node_modules/@types"],
+    "typeRoots": ["./dashboard/node_modules/@types"],
     "types": ["node"]
   },
   "include": ["src/*.ts"],
-  "exclude": ["src/dashboard", "test", "dist"]
+  "exclude": ["dashboard", "test", "dist"]
 }

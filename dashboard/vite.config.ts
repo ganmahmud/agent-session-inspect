@@ -3,7 +3,7 @@ import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
-const parentSource = new URL('../..', import.meta.url).pathname;
+const parentSource = new URL('..', import.meta.url).pathname;
 
 export default defineConfig({
 	plugins: [
@@ -15,9 +15,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			adapter: adapter({ out: '../../dist/dashboard' })
+			adapter: adapter({ out: '../dist/dashboard' })
 		})
 	],
 	server: { fs: { allow: [parentSource] } },
-	ssr: { noExternal: true }
+	ssr: { noExternal: true, external: ['sanitize-html'] }
 });

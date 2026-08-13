@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { renderMarkdown } from '$lib/markdown';
-	import type { ReplyActivity, SessionDetail, SessionInventory, TokenUsage, UsageSnapshot } from '../../../types.ts';
+	import type { ConversationEntry, ReplyActivity, SessionDetail, SessionInventory, TokenUsage, UsageSnapshot } from '../../../src/types.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -12,6 +12,7 @@
 	let query = $state('');
 	let theme = $state<'light' | 'dark'>('dark');
 	let view = $state<'conversation' | 'usage'>('conversation');
+	let expandedActivities = $state(new Set<string>());
 
 	const sessions = () =>
 		data.inventory.sessions.filter((session) => `${title(session)} ${session.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
@@ -27,10 +28,19 @@
 	};
 	const latestTokens = (session: SessionInventory) => session.token.last?.totalTokens ?? session.token.total?.totalTokens;
 	const activityTotal = (activity?: ReplyActivity) => activity?.modelRequests.reduce((sum, request) => sum + (request.usage.totalTokens ?? 0), 0);
+	const activitySummary = (activity: ReplyActivity) => `${activity.model.name ?? 'Model unavailable'} · ${activity.modelRequests.length} steps · ${number(activityTotal(activity))} tokens`;
 	const snapshotTotal = (snapshot: UsageSnapshot) => snapshot.usage.totalTokens ?? 0;
 	const maxSnapshotTotal = () => Math.max(1, ...(detail?.usage.snapshots.map(snapshotTotal) ?? [0]));
 	const percent = (value: number, total: number) => Math.max(2, Math.round((value / total) * 100));
 	const compactUsage = (usage?: TokenUsage) => usage?.totalTokens === undefined ? 'No model step recorded' : `${number(usage.inputTokens)} in · ${number(usage.outputTokens)} out`;
+	const messageLabel = (message: ConversationEntry) => message.kind === 'internal_review' ? 'Codex internal review' : message.role === 'assistant' ? 'Codex' : 'You';
+
+	function toggleActivity(id: string) {
+		const next = new Set(expandedActivities);
+		if (next.has(id)) next.delete(id);
+		else next.add(id);
+		expandedActivities = next;
+	}
 
 	async function select(id: string) {
 		selectedId = id;
@@ -97,12 +107,12 @@
 						<p class="evidence-note">Usage is exact for recorded model steps, not individual message text. Reply activity is grouped by source order.</p>
 						<div class="conversation">
 							{#each detail.conversation as message (message.id)}
-								<details class:from-user={message.role === 'user'} class:from-agent={message.role === 'assistant'} class="chat-message" open>
-									<summary><span class="role">{message.role === 'assistant' ? 'Codex' : 'You'}</span><span class="message-stamp">{message.role === 'assistant' && message.activity?.model.name ? message.activity.model.name : ''}{message.role === 'assistant' && message.activity?.model.name ? ' · ' : ''}{clock(message.timestamp)}</span></summary>
+								<details class:from-user={message.role === 'user' && message.kind !== 'internal_review'} class:from-agent={message.role === 'assistant'} class:internal-review={message.kind === 'internal_review'} class="chat-message" open={message.kind !== 'internal_review'}>
+									<summary><span class="role">{messageLabel(message)}</span><span class="message-stamp">{message.kind === 'internal_review' ? 'Approval/security review · ' : ''}{message.role === 'assistant' && message.activity ? activitySummary(message.activity) + ' · ' : ''}{clock(message.timestamp)}</span></summary>
 									<div class="markdown">{@html renderMarkdown(message.text)}</div>
 									{#if message.activity}
-										<details class="activity">
-											<summary><span><b>Work</b><small>Derived from source order</small></span><span>{message.activity.model.name ?? 'Model unavailable'} · {message.activity.modelRequests.length} steps · {number(activityTotal(message.activity))} tokens</span></summary>
+										<button class="activity-toggle" type="button" aria-expanded={expandedActivities.has(message.id)} onclick={() => toggleActivity(message.id)}><span><b>Response details</b><small>Recorded model steps and tool activity</small></span><span>{expandedActivities.has(message.id) ? 'Hide details' : 'Show details'}</span></button>
+										{#if expandedActivities.has(message.id)}
 											<div class="activity-body">
 												<div class="work-stats"><span><small>Response interval</small><b>{duration(message.activity.breakdown.durationMs)}</b></span><span><small>Measured tools</small><b>{duration(message.activity.breakdown.measuredToolMs)}</b></span><span><small>Unclassified</small><b>{duration(message.activity.breakdown.otherElapsedMs)}</b></span><span><small>Edits</small><b>{message.activity.edits.length}</b></span></div>
 												<p class="time-explanation">{message.activity.breakdown.explanation}</p>
@@ -111,7 +121,7 @@
 												{#if message.activity.tools.length}<div><p class="section-label">Tools</p>{#each message.activity.tools as tool (tool.id)}<details class="tool"><summary><span><b>{tool.name}</b><small>{tool.status ?? 'recorded'} · {tool.kind}</small></span><span>{duration(tool.durationMs)}</span></summary>{#if tool.input}<div><p>Input</p><pre>{tool.input}</pre></div>{/if}{#if tool.output}<div><p>Output</p><pre>{tool.output}</pre></div>{/if}</details>{/each}</div>{/if}
 												{#if message.activity.edits.length}<div><p class="section-label">Edits</p>{#each message.activity.edits as edit (edit.id)}<details class="tool"><summary><span><b>{edit.files.length} file{edit.files.length === 1 ? '' : 's'} changed</b><small>{edit.status ?? 'recorded'}</small></span></summary>{#each edit.files as file (file.path)}<div><p>{file.operation ?? 'update'} · {file.path}</p>{#if file.diff}<pre>{file.diff}</pre>{/if}</div>{/each}</details>{/each}</div>{/if}
 											</div>
-										</details>
+										{/if}
 									{/if}
 								</details>
 							{:else}<p class="state-card">No visible User or Codex messages were found in this log.</p>{/each}

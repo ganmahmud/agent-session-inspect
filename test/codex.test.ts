@@ -191,3 +191,20 @@ test('falls back to legacy response messages and merges overlapping tool time', 
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
+
+test('classifies Codex approval reviews separately from user conversation', async () => {
+	const directory = tempDirectory();
+	try {
+		const log = writeLog(directory, 'review.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('event_msg', { type: 'user_message', message: 'The following is the Codex agent history whose request action you are assessing:\n\n>>> TRANSCRIPT START' }),
+			jsonLine('event_msg', { type: 'agent_message', message: '{"outcome":"allow"}' }),
+		]);
+		const scan = await scanCodex(log);
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		assert.equal(detail.conversation[0]?.kind, 'internal_review');
+		assert.equal(detail.conversation[1]?.kind, 'conversation');
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});

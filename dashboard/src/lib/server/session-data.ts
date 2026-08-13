@@ -1,8 +1,8 @@
 import { join } from 'node:path';
-import { readCodexCatalog } from '../../../../catalog.ts';
-import { scanCodex } from '../../../../codex.ts';
-import { readCodexSessionDetail } from '../../../../detail.ts';
-import type { ScanResult, SessionDetail } from '../../../../types.ts';
+import { readCodexCatalog } from '../../../../src/catalog.ts';
+import { scanCodex } from '../../../../src/codex.ts';
+import { readCodexSessionDetail } from '../../../../src/detail.ts';
+import type { ScanResult, SessionDetail } from '../../../../src/types.ts';
 
 const codexHome = process.env.CODEX_HOME || join(process.env.HOME || '', '.codex');
 const sessionPath = process.env.ASI_SESSIONS_PATH || join(codexHome, 'sessions');
