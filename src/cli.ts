@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { readCodexCatalog } from './catalog.ts';
 import { displayName, scanCodex, shortId } from './codex.ts';
 import { renderInspect, renderScan } from './report.ts';
+import { startTui } from './tui.ts';
 import type { ScanResult, SessionInventory } from './types.ts';
 
 const codexHome = process.env.CODEX_HOME || join(process.env.HOME || '', '.codex');
@@ -29,12 +30,14 @@ interface Arguments {
   target?: string;
   format: 'text' | 'json';
   verbose: boolean;
+  ui: boolean;
   port: number;
 }
 
 function usage(): string {
   return `Usage:
-  agent-session-inspect codex scan [path] [--format text|json] [--verbose]
+  agent-session-inspect tui [path]
+  agent-session-inspect codex scan [path] [--format text|json] [--verbose] [--ui]
   agent-session-inspect inspect <title|session-id|file> [--format text|json] [--verbose]
   agent-session-inspect serve [path] [--port 4318]`;
 }
@@ -43,6 +46,7 @@ function parse(argv: string[]): Arguments {
   const values = argv.slice(2);
   let format: Arguments['format'] = 'text';
   let verbose = false;
+  let ui = false;
   let port = 4318;
   const positional: string[] = [];
   for (let index = 0; index < values.length; index += 1) {
@@ -53,6 +57,8 @@ function parse(argv: string[]): Arguments {
       format = next;
     } else if (value === '--verbose') {
       verbose = true;
+    } else if (value === '--ui' || value === '--tui') {
+      ui = true;
     } else if (value === '--port') {
       const next = Number(values[++index]);
       if (!Number.isInteger(next) || next < 0 || next > 65535) throw new Error('--port must be an integer from 0 to 65535');
@@ -64,9 +70,11 @@ function parse(argv: string[]): Arguments {
     }
   }
 
-  if (positional[0] === 'codex' && positional[1] === 'scan') return { command: 'scan', target: positional[2], format, verbose, port };
-  if (positional[0] === 'inspect' && positional[1]) return { command: 'inspect', target: positional.slice(1).join(' '), format, verbose, port };
-  if (positional[0] === 'serve') return { command: 'serve', target: positional[1], format, verbose, port };
+  if (positional[0] === 'tui' || positional[0] === 'ui') return { command: 'tui', target: positional[1], format, verbose, ui: true, port };
+  if (positional[0] === 'codex' && positional[1] === 'scan') return { command: 'scan', target: positional[2], format, verbose, ui, port };
+  if (positional[0] === 'inspect' && positional[1]) return { command: 'inspect', target: positional.slice(1).join(' '), format, verbose, ui, port };
+  if (positional[0] === 'serve') return { command: 'serve', target: positional[1], format, verbose, ui, port };
+  if (!positional.length) return { command: 'tui', target: undefined, format, verbose, ui: true, port };
   throw new Error(usage());
 }
 
@@ -88,6 +96,11 @@ async function resultFor(path: string): Promise<ScanResult> {
 
 async function main(): Promise<void> {
   const args = parse(process.argv);
+  if (args.command === 'tui' || args.ui) {
+    const result = await resultFor(args.target ?? defaultSessionsPath);
+    await startTui(result);
+    return;
+  }
   if (args.command === 'scan') {
     const result = await resultFor(args.target ?? defaultSessionsPath);
     console.log(args.format === 'json' ? JSON.stringify(result, null, 2) : renderScan(result, args.verbose));

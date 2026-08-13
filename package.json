@@ -15,7 +15,7 @@
     "build": "npm run build:cli && npm run build:dashboard",
     "prepack": "npm run build",
     "test": "node --no-warnings --test test/*.test.ts",
-    "check": "node --no-warnings --check src/cli.ts && node --no-warnings --check src/codex.ts && node --no-warnings --check src/catalog.ts && node --no-warnings --check src/detail.ts && node --no-warnings --check src/report.ts"
+    "check": "node --no-warnings --check src/cli.ts && node --no-warnings --check src/codex.ts && node --no-warnings --check src/catalog.ts && node --no-warnings --check src/detail.ts && node --no-warnings --check src/report.ts && node --no-warnings --check src/tui.ts"
   },
   "engines": {
     "node": ">=22.13.0"
