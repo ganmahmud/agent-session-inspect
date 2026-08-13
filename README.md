@@ -36,6 +36,7 @@ agent-session-inspect web --port 4318
 
 - **⚡ Terminal TUI Dashboard (`tui` / `--ui`)**: Dual-pane keyboard & mouse interface with live session filtering, turn-by-turn activity logs, tool execution metrics, and raw metadata.
 - **🌐 Web Dashboard (`web` / `--web`)**: SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, timeline visualization, and rich markdown rendering.
+- **📦 Session Export & Import**: Download full sessions or single message interactions as JSON; drag-and-drop JSON files to inspect ephemeral sessions in-memory.
 - **📊 Terminal & JSON Summaries**: Quick scan tables or JSON outputs for CI/CD scripting (`--format json`).
 - **🔒 100% Local & Read-Only**: Parses local `~/.codex/sessions` logs directly without modifying data.
 
