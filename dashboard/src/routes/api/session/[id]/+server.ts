@@ -1,8 +1,10 @@
 import { json, error } from '@sveltejs/kit';
-import { sessionDetail } from '$lib/server/session-data';
+import { deleteImportedSession } from '$lib/server/session-data';
 
-export async function GET({ params }) {
-	const detail = await sessionDetail(params.id);
-	if (!detail) error(404, 'Session not found');
-	return json(detail);
+export async function DELETE({ params }) {
+	const deleted = deleteImportedSession(params.id);
+	if (!deleted) {
+		error(404, 'Imported session not found or cannot be deleted');
+	}
+	return json({ success: true, id: params.id });
 }

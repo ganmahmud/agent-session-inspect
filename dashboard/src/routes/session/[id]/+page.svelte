@@ -17,7 +17,8 @@
 		Check,
 		MessageSquare,
 		Code,
-		FileText
+		FileText,
+		Download
 	} from '@lucide/svelte';
 	import TokenBreakdownVisualizer from '$lib/components/TokenBreakdownVisualizer.svelte';
 	import type { ReplyActivity, SessionDetail, UsageSnapshot } from '../../../../../src/types.ts';
@@ -33,6 +34,8 @@
 	let copiedId = $state(false);
 	const copiedMessageIds = new SvelteSet<string>();
 	let highlightedTokenMessageId = $state<string | null>(null);
+	let exportedSession = $state(false);
+	const exportedMessageIds = new SvelteSet<string>();
 
 	const title = (session: SessionDetail) => session.displayTitle.value ?? 'Untitled Codex session';
 	const shortId = (id: string) => id.slice(0, 8);
@@ -109,6 +112,52 @@
 		}, 2000);
 	}
 
+	async function exportSession() {
+		try {
+			const res = await fetch(`/api/session/${detail.id}/export`);
+			if (!res.ok) return;
+			const blob = await res.blob();
+			const disposition = res.headers.get('Content-Disposition') ?? '';
+			const match = disposition.match(/filename="(.+)"/);
+			const filename = match?.[1] ?? `session-${detail.id.slice(0, 8)}.json`;
+			const a = document.createElement('a');
+			a.href = URL.createObjectURL(blob);
+			a.download = filename;
+			a.click();
+			URL.revokeObjectURL(a.href);
+			exportedSession = true;
+			setTimeout(() => (exportedSession = false), 2500);
+		} catch {
+			// Silent fail — no UI disruption
+		}
+	}
+
+	function exportMessage(message: import('../../../../../src/types.ts').ConversationEntry) {
+		const payload = {
+			exportVersion: 1,
+			exportedAt: new Date().toISOString(),
+			sessionId: detail.id,
+			sessionTitle: title(detail),
+			message: {
+				id: message.id,
+				role: message.role,
+				kind: message.kind,
+				timestamp: message.timestamp,
+				text: message.text,
+				phase: message.phase,
+				activity: message.activity
+			}
+		};
+		const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = `message-${message.role}-${message.id.slice(0, 8)}.json`;
+		a.click();
+		URL.revokeObjectURL(a.href);
+		exportedMessageIds.add(message.id);
+		setTimeout(() => exportedMessageIds.delete(message.id), 2500);
+	}
+
 	function openTokenBreakdown(messageId: string, event?: Event) {
 		if (event) event.stopPropagation();
 
@@ -149,7 +198,7 @@
 <div class="mx-auto max-w-245 space-y-6">
 	<!-- Session Overview Header Box -->
 	<div
-		class="rounded-xl border-[1.5px] border-(--line) bg-(--panel) p-5 shadow-[var(--hard-shadow)] sm:p-6"
+		class="rounded-xl border-[1.5px] border-(--line) bg-(--panel) p-5 shadow-(--hard-shadow) sm:p-6"
 	>
 		<div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
 			<div class="min-w-0 flex-1 space-y-2.5">
@@ -173,6 +222,23 @@
 						{:else}
 							<Copy class="h-3 w-3 text-(--muted)" />
 							<span>{shortId(detail.id)}</span>
+						{/if}
+					</button>
+
+					<!-- Export Session Button -->
+					<button
+						class="export-btn-primary"
+						onclick={exportSession}
+						title="Export full session as JSON file"
+					>
+						{#if exportedSession}
+							<span class="export-toast">
+								<Check class="h-3.5 w-3.5 text-emerald-400" />
+								<span class="font-bold text-emerald-400">Exported</span>
+							</span>
+						{:else}
+							<Download class="h-3.5 w-3.5" />
+							<span class="font-bold">Export Session</span>
 						{/if}
 					</button>
 				</div>
@@ -237,7 +303,7 @@
 
 				<div class="mt-1 flex items-baseline justify-between gap-2">
 					<b class="font-mono text-2xl font-black tracking-tight text-(--ink) sm:text-3xl">
-						{number(detail.usage.latest?.usage.totalTokens)}
+						{number(detail.usage.latest?.usage.totalTokens ?? detail.conversation.reduce((sum, m) => sum + (activityTotal(m.activity) ?? 0), 0))}
 					</b>
 				</div>
 
@@ -245,9 +311,7 @@
 					class="mt-2 flex items-center justify-between border-t border-(--line)/60 pt-2 text-[10px] font-medium text-(--muted)"
 				>
 					<span
-						>{detail.usage.modelStepCount ?? 0} API step{detail.usage.modelStepCount === 1
-							? ''
-							: 's'}</span
+						>{(detail.usage.modelStepCount && detail.usage.modelStepCount > 0) ? detail.usage.modelStepCount : detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0)} API step{(detail.usage.modelStepCount === 1 || detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0) === 1) ? '' : 's'}</span
 					>
 					<span
 						class="inline-flex items-center gap-0.5 font-semibold text-(--ink) transition-colors group-hover:text-amber-500"
@@ -307,7 +371,7 @@
 
 			<div class="hidden items-center gap-2 font-mono text-xs font-bold text-(--ink) md:flex">
 				<span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
-				<span>{detail.conversation.length} messages · {detail.usage.modelStepCount ?? 0} steps</span
+				<span>{detail.conversation.length} messages · {(detail.usage.modelStepCount && detail.usage.modelStepCount > 0) ? detail.usage.modelStepCount : detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0)} steps</span
 				>
 			</div>
 		</div>
@@ -517,6 +581,26 @@
 									<Check class="h-3.5 w-3.5 text-(--success)" />
 								{:else}
 									<Copy class="h-3.5 w-3.5" />
+								{/if}
+							</button>
+
+							<!-- Export single message button -->
+							<button
+								type="button"
+								class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-bold text-(--muted) transition-colors hover:border-(--accent) hover:bg-(--panel) hover:text-(--ink)"
+								onclick={(e) => {
+									e.stopPropagation();
+									exportMessage(message);
+								}}
+								title="Export this message as JSON"
+								aria-label="Export message"
+							>
+								{#if exportedMessageIds.has(message.id)}
+									<Check class="h-3 w-3 text-(--success)" />
+									<span class="text-(--success)">Exported</span>
+								{:else}
+									<Download class="h-3 w-3" />
+									<span>Export</span>
 								{/if}
 							</button>
 						</div>
