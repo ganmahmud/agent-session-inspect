@@ -185,13 +185,17 @@
 >
 	{#if isDragging}
 		<div
-			class="pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-950/80 p-6 text-white backdrop-blur-md transition-all animate-in fade-in duration-200"
+			class="animate-in fade-in pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-950/80 p-6 text-white backdrop-blur-md transition-all duration-200"
 		>
-			<div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600/30 border border-indigo-400/50 shadow-2xl">
+			<div
+				class="flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-400/50 bg-indigo-600/30 shadow-2xl"
+			>
 				<Upload class="h-8 w-8 animate-bounce text-indigo-200" />
 			</div>
 			<h2 class="text-xl font-bold tracking-tight">Drop JSON file here to import</h2>
-			<p class="text-xs text-indigo-200/80 font-medium">Supports full session exports or single message snippets</p>
+			<p class="text-xs font-medium text-indigo-200/80">
+				Supports full session exports or single message snippets
+			</p>
 		</div>
 	{/if}
 	<!-- Top Navigation Header Aligned to Workspace Grid -->
@@ -252,7 +256,7 @@
 						title="Import full session or single message JSON"
 					>
 						<Upload class="h-3.5 w-3.5 text-(--accent)" />
-						<span>Import</span>
+						<span class="text-xs">Import</span>
 					</button>
 
 					<div
@@ -353,12 +357,17 @@
 			<div class="max-h-75 flex-1 divide-y divide-(--line) overflow-y-auto lg:max-h-none">
 				{#if importedSessionsList().length > 0}
 					<div class="border-b-2 border-indigo-500/30 bg-indigo-950/20">
-						<div class="px-3.5 py-2 font-mono text-[10px] font-bold tracking-wider text-indigo-400 uppercase flex items-center justify-between border-b border-indigo-500/20">
+						<div
+							class="flex items-center justify-between border-b border-indigo-500/20 px-3.5 py-2 font-mono text-[10px] font-bold tracking-wider text-indigo-400 uppercase"
+						>
 							<div class="flex items-center gap-1.5">
 								<Upload class="h-3 w-3 text-indigo-400" />
 								<span>Imported Items ({importedSessionsList().length})</span>
 							</div>
-							<span class="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded font-sans font-normal">In Memory</span>
+							<span
+								class="rounded bg-indigo-500/20 px-1.5 py-0.5 font-sans text-[9px] font-normal text-indigo-300"
+								>In Memory</span
+							>
 						</div>
 						<div class="divide-y divide-indigo-500/10">
 							{#each importedSessionsList() as session (session.id)}
@@ -367,7 +376,7 @@
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={$page.params.id === session.id}
-									class="session-row group relative block no-underline border-l-2 border-l-indigo-500 bg-indigo-500/5 hover:bg-indigo-500/15"
+									class="session-row group relative block border-l-2 border-l-indigo-500 bg-indigo-500/5 no-underline hover:bg-indigo-500/15"
 								>
 									<div class="flex items-start justify-between gap-2">
 										<span
@@ -376,11 +385,11 @@
 										>
 											{title(session)}
 										</span>
-										<div class="flex items-center gap-1 shrink-0">
+										<div class="flex shrink-0 items-center gap-1">
 											<span class="imported-badge">Imported</span>
 											<button
 												type="button"
-												class="p-0.5 text-(--muted) hover:text-red-500 rounded transition-colors"
+												class="rounded p-0.5 text-(--muted) transition-colors hover:text-red-500"
 												title="Delete imported item"
 												onclick={(e) => deleteImported(session.id, e)}
 											>
@@ -410,7 +419,9 @@
 
 				{#if regularSessions().length > 0}
 					{#if importedSessionsList().length > 0}
-						<div class="px-3.5 py-2 font-mono text-[10px] font-bold tracking-wider text-(--muted) uppercase border-b border-(--line) bg-(--panel-subtle)/30">
+						<div
+							class="border-b border-(--line) bg-(--panel-subtle)/30 px-3.5 py-2 font-mono text-[10px] font-bold tracking-wider text-(--muted) uppercase"
+						>
 							Local Sessions ({regularSessions().length})
 						</div>
 					{/if}
@@ -463,11 +474,7 @@
 					bind:this={fileInput}
 					onchange={handleImportFile}
 				/>
-				<button
-					class="import-btn"
-					onclick={() => fileInput?.click()}
-					disabled={importLoading}
-				>
+				<button class="import-btn" onclick={() => fileInput?.click()} disabled={importLoading}>
 					{#if importLoading}
 						<span class="import-spinner"></span>
 						<span>Importing…</span>
