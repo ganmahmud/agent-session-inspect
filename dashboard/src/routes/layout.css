@@ -387,11 +387,63 @@ button, input {
 	padding: 14px 18px;
 }
 
+/* User Prompt Collapse & Truncation Styles (5-Line Preview + Glassmorphism Backdrop Blur) */
+.user-prompt-wrapper {
+	position: relative;
+	transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.user-prompt-wrapper.user-prompt-collapsed {
+	max-height: 122px; /* Exactly 5 lines of user prompt text */
+	overflow: hidden;
+}
+
+.user-prompt-blur {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 46px;
+	backdrop-filter: blur(6px);
+	-webkit-backdrop-filter: blur(6px);
+	background: linear-gradient(to bottom, transparent 0%, var(--panel-subtle) 92%);
+	pointer-events: none;
+	mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
+	-webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
+}
+
 /* Markdown styling inside messages */
 .markdown {
 	color: var(--ink);
 	font-size: 15.5px;
 	line-height: 1.7;
+}
+
+/* Proportional Typography for User vs Agent Messages */
+.chat-card.from-user .markdown {
+	font-size: 14.5px;
+	line-height: 1.58;
+	letter-spacing: -0.003em;
+}
+.chat-card.from-user .markdown p,
+.chat-card.from-user .markdown ul,
+.chat-card.from-user .markdown ol {
+	margin-bottom: 8px;
+}
+.chat-card.from-user .markdown code {
+	font-size: 0.86em;
+	background: rgba(0, 0, 0, 0.2);
+}
+
+.chat-card.from-agent .markdown {
+	font-size: 15.5px;
+	line-height: 1.7;
+	letter-spacing: 0.005em;
+}
+.chat-card.from-agent .markdown p,
+.chat-card.from-agent .markdown ul,
+.chat-card.from-agent .markdown ol {
+	margin-bottom: 12px;
 }
 .markdown > :first-child {
 	margin-top: 0;

@@ -9,6 +9,7 @@
 		ShieldCheck,
 		Terminal,
 		ChevronDown,
+		ChevronUp,
 		ChevronRight,
 		Zap,
 		BarChart3,
@@ -45,6 +46,7 @@
 	let roleFilter = $state<'all' | 'user' | 'agent' | 'review'>('all');
 	const expandedActivities = new SvelteSet<string>();
 	const expandedReviews = new SvelteSet<string>();
+	const expandedUserMessages = new SvelteSet<string>();
 	let copiedId = $state(false);
 	const copiedMessageIds = new SvelteSet<string>();
 	let highlightedTokenMessageId = $state<string | null>(null);
@@ -159,18 +161,34 @@
 		}
 	}
 
+	function isLongUserMessage(text: string): boolean {
+		if (!text) return false;
+		return text.length > 450 || (text.match(/\n/g) || []).length > 7;
+	}
+
+	function toggleUserMessageExpand(id: string) {
+		if (expandedUserMessages.has(id)) {
+			expandedUserMessages.delete(id);
+		} else {
+			expandedUserMessages.add(id);
+		}
+	}
+
 	function expandAllActivities() {
 		expandedActivities.clear();
 		expandedReviews.clear();
+		expandedUserMessages.clear();
 		for (const m of detail.conversation) {
 			if (m.activity) expandedActivities.add(m.id);
 			if (m.kind === 'internal_review') expandedReviews.add(m.id);
+			if (m.role === 'user' && isLongUserMessage(m.text)) expandedUserMessages.add(m.id);
 		}
 	}
 
 	function collapseAllActivities() {
 		expandedActivities.clear();
 		expandedReviews.clear();
+		expandedUserMessages.clear();
 	}
 
 	function copySessionId() {
@@ -766,6 +784,30 @@
 										<span>{number(userTokens.count)} tokens</span>
 									</span>
 								{/if}
+								{#if isLongUserMessage(message.text)}
+									<button
+										type="button"
+										class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-semibold text-(--muted) transition-all hover:text-(--ink)"
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleUserMessageExpand(message.id);
+										}}
+										title="Toggle prompt expansion"
+									>
+										<span
+											>{expandedUserMessages.has(message.id)
+												? 'Hide prompt'
+												: 'Expand prompt'}</span
+										>
+										<ChevronDown
+											class="h-3 w-3 transition-transform duration-200 {expandedUserMessages.has(
+												message.id
+											)
+												? 'rotate-180'
+												: ''}"
+										/>
+									</button>
+								{/if}
 							{/if}
 
 							{#if message.kind === 'internal_review'}
@@ -847,7 +889,40 @@
 					<!-- Card Body -->
 					{#if message.kind !== 'internal_review' || expandedReviews.has(message.id)}
 						<div class="card-body">
-							<div class="markdown" use:markdown={message.text}></div>
+							{#if message.role === 'user' && message.kind !== 'internal_review' && isLongUserMessage(message.text)}
+								{@const isExpanded = expandedUserMessages.has(message.id)}
+								<div class="user-prompt-wrapper" class:user-prompt-collapsed={!isExpanded}>
+									<div class="markdown" use:markdown={message.text}></div>
+									{#if !isExpanded}
+										<div class="user-prompt-blur"></div>
+									{/if}
+								</div>
+								<div
+									class="mt-2 flex items-center justify-between border-t border-(--line-subtle) pt-1.5"
+								>
+									<span class="font-mono text-[11px] text-(--muted)">
+										{number(message.text.length)} chars
+									</span>
+									<button
+										type="button"
+										class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-(--line) bg-(--field) px-2.5 py-1 text-xs font-semibold text-(--ink) transition-all hover:bg-(--panel-subtle) hover:text-indigo-400"
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleUserMessageExpand(message.id);
+										}}
+									>
+										{#if isExpanded}
+											<span class="text-xs">Show less</span>
+											<ChevronUp class="h-3.5 w-3.5" />
+										{:else}
+											<span class="text-xs">Show more</span>
+											<ChevronDown class="h-3.5 w-3.5" />
+										{/if}
+									</button>
+								</div>
+							{:else}
+								<div class="markdown" use:markdown={message.text}></div>
+							{/if}
 
 							<!-- Assistant Tool / Activity Accordion -->
 							{#if message.activity}
