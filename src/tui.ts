@@ -1,7 +1,8 @@
 import readline from 'node:readline';
+import { writeFileSync } from 'node:fs';
 import { displayName, shortId } from './codex.ts';
 import { readCodexSessionDetail } from './detail.ts';
-import type { ScanResult, SessionDetail, SessionInventory } from './types.ts';
+import type { ReplyActivity, ScanResult, SessionDetail, SessionInventory } from './types.ts';
 
 // 256-color palette for futuristic aesthetic
 const c = {
@@ -22,11 +23,21 @@ const c = {
   bgTabActive: (s: string) => `\x1b[48;5;39m\x1b[38;5;232m\x1b[1m${s}\x1b[0m`,
   bgTabInactive: (s: string) => `\x1b[48;5;236m\x1b[38;5;247m${s}\x1b[0m`,
   bgFocusTag: (s: string) => `\x1b[48;5;49m\x1b[38;5;232m\x1b[1m${s}\x1b[0m`,
+  bgNotice: (s: string) => `\x1b[48;5;28m\x1b[38;5;255m\x1b[1m${s}\x1b[0m`,
 };
 
 function sanitize(str: string | null | undefined): string {
   if (!str) return '';
   return str.replace(/[\r\n\t]+/g, ' ').trim();
+}
+
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+}
+
+function visibleLength(str: string): number {
+  return stripAnsi(str).length;
 }
 
 function formatNumber(value: number | undefined): string {
@@ -50,6 +61,13 @@ function latestTokens(session: SessionInventory): number | undefined {
   return session.token.last?.totalTokens ?? session.token.total?.totalTokens;
 }
 
+function progressBar(pct: number, width = 20): string {
+  const clamped = Math.max(0, Math.min(100, pct));
+  const filledLen = Math.round((clamped / 100) * width);
+  const emptyLen = width - filledLen;
+  return `[${'█'.repeat(filledLen)}${'░'.repeat(emptyLen)}] ${clamped}%`;
+}
+
 function wrapText(input: string, maxWidth: number): string[] {
   if (maxWidth <= 5) maxWidth = 10;
   const clean = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -62,8 +80,9 @@ function wrapText(input: string, maxWidth: number): string[] {
       continue;
     }
     let current = rawLine;
-    while (current.length > maxWidth) {
-      let spaceIdx = current.lastIndexOf(' ', maxWidth);
+    while (visibleLength(current) > maxWidth) {
+      const plain = stripAnsi(current);
+      let spaceIdx = plain.lastIndexOf(' ', maxWidth);
       if (spaceIdx <= 4) spaceIdx = maxWidth;
       output.push(current.slice(0, spaceIdx));
       current = current.slice(spaceIdx).trimStart();
@@ -76,14 +95,201 @@ function wrapText(input: string, maxWidth: number): string[] {
 function formatCard(title: string, colorFn: (s: string) => string, lines: string[], width: number): string[] {
   const cardWidth = Math.max(16, width);
   const innerWidth = cardWidth - 4;
+  const plainTitle = stripAnsi(title);
   const titleStr = `─ ${title} `;
-  const topBorderLen = Math.max(0, cardWidth - titleStr.length - 2);
-  const header = colorFn(`┌${titleStr}${'─'.repeat(topBorderLen)}┐`);
-  const footer = colorFn(`└${'─'.repeat(Math.max(0, cardWidth - 2))}┘`);
+  const topBorderLen = Math.max(0, cardWidth - plainTitle.length - 4);
+  const header = colorFn(`┌${titleStr}${'─'.repeat(topBorderLen)}`);
+  const footer = colorFn(`└${'─'.repeat(Math.max(0, cardWidth - 2))}`);
 
   const wrapped = lines.flatMap((line) => wrapText(line, innerWidth));
-  const body = wrapped.map((line) => `${colorFn('│')} ${line.padEnd(innerWidth)} ${colorFn('│')}`);
+  const body = wrapped.map((line) => `${colorFn('│')} ${line}`);
   return [header, ...body, footer];
+}
+
+function activityTotal(activity?: ReplyActivity): number {
+  return activity?.modelRequests.reduce((sum, request) => sum + (request.usage.totalTokens ?? 0), 0) ?? 0;
+}
+
+interface UsageStats {
+  maxContext: number;
+  latestTotal: number;
+  saturationPct: number;
+  latestInput: number;
+  latestCached: number;
+  latestFresh: number;
+  latestOutput: number;
+  latestReasoning: number;
+  cacheHitRatio: number;
+  reasoningRatio: number;
+  totalToolMs: number;
+  totalOtherMs: number;
+  snapshotCount: number;
+  modelStepCount: number;
+}
+
+function computeUsageStats(detail: SessionDetail): UsageStats {
+  const latest = detail.usage.latest;
+  const snapshots = detail.usage.snapshots ?? [];
+  const maxContext = latest?.modelContextWindow || 200000;
+  const latestTotal = latest
+    ? (latest.usage.totalTokens ?? (latest.usage.inputTokens ?? 0) + (latest.usage.outputTokens ?? 0))
+    : 0;
+  const saturationPct = Math.min(100, Math.round((latestTotal / maxContext) * 100));
+
+  const latestInput = latest?.usage.inputTokens ?? 0;
+  const latestCached = latest?.usage.cachedInputTokens ?? 0;
+  const latestFresh = Math.max(0, latestInput - latestCached);
+  const latestOutput = latest?.usage.outputTokens ?? 0;
+  const latestReasoning = latest?.usage.reasoningOutputTokens ?? 0;
+
+  const cacheHitRatio = latestInput > 0 ? Math.round((latestCached / latestInput) * 100) : 0;
+  const reasoningRatio = latestOutput > 0 ? Math.round((latestReasoning / latestOutput) * 100) : 0;
+
+  let totalToolMs = 0;
+  let totalOtherMs = 0;
+  for (const m of detail.conversation) {
+    if (m.role === 'assistant' && m.activity?.breakdown) {
+      totalToolMs += m.activity.breakdown.measuredToolMs ?? 0;
+      totalOtherMs += m.activity.breakdown.otherElapsedMs ?? 0;
+    }
+  }
+
+  return {
+    maxContext,
+    latestTotal,
+    saturationPct,
+    latestInput,
+    latestCached,
+    latestFresh,
+    latestOutput,
+    latestReasoning,
+    cacheHitRatio,
+    reasoningRatio,
+    totalToolMs,
+    totalOtherMs,
+    snapshotCount: snapshots.length,
+    modelStepCount: detail.usage.modelStepCount ?? 0,
+  };
+}
+
+interface TopTokenTurn {
+  id: string;
+  timestamp?: string;
+  turnNumber: number;
+  totalTokens: number;
+  shareOfSessionPct: number;
+  promptSnippet: string;
+  modelName: string;
+  stepCount: number;
+  input: number;
+  cached: number;
+  fresh: number;
+  output: number;
+  reasoning: number;
+}
+
+function computeTopTokenTurns(detail: SessionDetail, usageStats: UsageStats): TopTokenTurn[] {
+  const assistantMsgs = detail.conversation.filter((m) => m.role === 'assistant');
+  const grandTotal = usageStats.latestTotal || 1;
+
+  const turns = assistantMsgs.map((m, turnIdx) => {
+    const total = activityTotal(m.activity);
+    const msgIdx = detail.conversation.findIndex((x) => x.id === m.id);
+    const prevUserMsg = msgIdx > 0
+      ? detail.conversation.slice(0, msgIdx).reverse().find((x) => x.role === 'user' && x.kind !== 'internal_review')
+      : undefined;
+
+    let input = 0;
+    let cached = 0;
+    let output = 0;
+    let reasoning = 0;
+
+    for (const req of m.activity?.modelRequests ?? []) {
+      input += req.usage.inputTokens ?? 0;
+      cached += req.usage.cachedInputTokens ?? 0;
+      output += req.usage.outputTokens ?? 0;
+      reasoning += req.usage.reasoningOutputTokens ?? 0;
+    }
+
+    const fresh = Math.max(0, input - cached);
+
+    return {
+      id: m.id,
+      timestamp: m.timestamp,
+      turnNumber: turnIdx + 1,
+      totalTokens: total,
+      shareOfSessionPct: Math.round((total / grandTotal) * 100),
+      promptSnippet: prevUserMsg?.text ? sanitize(prevUserMsg.text).slice(0, 100) : 'Assistant response',
+      modelName: m.activity?.model.name ?? 'Model',
+      stepCount: m.activity?.modelRequests.length ?? 0,
+      input,
+      cached,
+      fresh,
+      output,
+      reasoning,
+    };
+  });
+
+  return turns.sort((a, b) => b.totalTokens - a.totalTokens).slice(0, 5);
+}
+
+interface ToolProfileItem {
+  name: string;
+  kind: string;
+  count: number;
+  durationMs: number;
+}
+
+interface ToolProfile {
+  tools: ToolProfileItem[];
+  totalInvocations: number;
+  totalEditsCount: number;
+  uniqueEditedFilesCount: number;
+}
+
+function computeToolUsageProfile(detail: SessionDetail): ToolProfile {
+  const map = new Map<string, ToolProfileItem>();
+  let totalEditsCount = 0;
+  const editedFilesSet = new Set<string>();
+
+  for (const m of detail.conversation) {
+    if (m.role === 'assistant' && m.activity) {
+      for (const t of m.activity.tools ?? []) {
+        const key = t.name ?? t.kind ?? 'tool';
+        const current = map.get(key) ?? { name: key, kind: t.kind, count: 0, durationMs: 0 };
+        current.count += 1;
+        current.durationMs += t.durationMs ?? 0;
+        map.set(key, current);
+      }
+      for (const edit of m.activity.edits ?? []) {
+        totalEditsCount += 1;
+        for (const f of edit.files) {
+          editedFilesSet.add(f.path);
+        }
+      }
+    }
+  }
+
+  const list = Array.from(map.values()).sort((a, b) => b.count - a.count);
+  const totalInvocations = list.reduce((sum, item) => sum + item.count, 0);
+
+  return {
+    tools: list,
+    totalInvocations,
+    totalEditsCount,
+    uniqueEditedFilesCount: editedFilesSet.size,
+  };
+}
+
+function exportSessionJson(detail: SessionDetail): string {
+  const filename = `session-${detail.id.slice(0, 8)}.json`;
+  const payload = {
+    exportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    session: detail,
+  };
+  writeFileSync(filename, JSON.stringify(payload, null, 2), 'utf8');
+  return filename;
 }
 
 export async function startTui(scanResult: ScanResult): Promise<void> {
@@ -95,12 +301,25 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
   let selectedIndex = 0;
   let scrollOffset = 0;
   let rightScrollOffset = 0;
-  let activeTab = 0; // 0: Overview, 1: Activity, 2: Tools, 3: Metadata
+  let activeTab = 0; // 0: Overview, 1: Activity, 2: Analytics, 3: Tools, 4: Metadata
   let activePane: 'sidebar' | 'main' = 'sidebar';
   let searchQuery = '';
   let isSearching = false;
+  let roleFilter: 'all' | 'user' | 'agent' | 'review' = 'all';
   let currentDetail: SessionDetail | null = null;
   let loadingDetail = false;
+  let notificationMessage = '';
+  let notificationTimer: NodeJS.Timeout | null = null;
+
+  const notify = (msg: string) => {
+    notificationMessage = msg;
+    render();
+    if (notificationTimer) clearTimeout(notificationTimer);
+    notificationTimer = setTimeout(() => {
+      notificationMessage = '';
+      render();
+    }, 3000);
+  };
 
   const getFilteredSessions = () => {
     if (!searchQuery.trim()) return sessions;
@@ -156,14 +375,14 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const buffer: string[] = [];
     const move = (r: number, col: number) => `\x1b[${r};${col}H`;
 
-    // 1. Move cursor to Home (Do not call \x1b[2J to avoid outer terminal scrollback redraw)
+    // 1. Move cursor to Home
     buffer.push('\x1b[H');
 
     // 2. Header Banner
     const totalTokens = sessions.reduce((sum, s) => sum + (latestTokens(s) ?? 0), 0);
     const headerTitle = `⚡ AGENT SESSION INSPECTOR`;
     const headerStats = `${filtered.length}/${sessions.length} sessions · ${formatNumber(totalTokens)} tokens`;
-    const focusTag = activePane === 'sidebar' ? c.bgFocusTag(' SIDEBAR FOCUS ') : c.bgFocusTag(' TRANSCRIPT FOCUS ');
+    const focusTag = activePane === 'sidebar' ? c.bgFocusTag(' SIDEBAR FOCUS ') : c.bgFocusTag(' MAIN FOCUS ');
     const headerLine = ` ${c.bold(headerTitle)}  ${c.dim('│')}  ${c.yellow(headerStats)}  ${focusTag}`.padEnd(cols - 1);
     buffer.push(move(1, 1) + c.bgHeader(headerLine.slice(0, cols)));
 
@@ -179,7 +398,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     buffer.push(move(2, 2) + '\x1b[K' + sidebarTitleColor(c.bold(searchStr.slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2))));
     buffer.push(move(3, 1) + '\x1b[K' + c.darkGray('─'.repeat(sidebarWidth)));
 
-    // 5. Sidebar Session List (Spacious 2-line cards)
+    // 5. Sidebar Session List
     for (let i = 0; i < visibleItemCount; i++) {
       const idx = scrollOffset + i;
       const rowStart = 4 + (i * 2);
@@ -212,7 +431,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
     // 6. Right Panel Header & Navigation Tabs
     const selectedSession = filtered[selectedIndex];
-    const tabLabels = [' Overview ', ' Activity ', ' Tools ', ' Metadata '];
+    const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Metadata '];
     const tabHeaders = tabLabels.map((label, idx) => {
       const shortcut = `[${idx + 1}]`;
       const fullLabel = `${shortcut}${label}`;
@@ -255,49 +474,181 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           `Compactions    ${selectedSession.compactionCount} compactions · ${selectedSession.rollbackCount} rollbacks`,
         ], mainWidth - 4));
 
+        if (currentDetail) {
+          const stats = computeUsageStats(currentDetail);
+          const profile = computeToolUsageProfile(currentDetail);
+          currentLines.push('');
+          currentLines.push(...formatCard('CONTEXT EFFICIENCY & EDITS', c.emerald, [
+            `Context Meter       ${progressBar(stats.saturationPct, 16)}`,
+            `Cache Hit Ratio     ${stats.cacheHitRatio}%`,
+            `Reasoning Ratio     ${stats.reasoningRatio}%`,
+            `Code Edits          ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} files`,
+          ], mainWidth - 4));
+        }
+
       } else if (activeTab === 1) {
-        // ACTIVITY TAB
+        // ACTIVITY TAB (CONVERSATION TIMELINE WITH ROLE FILTERING & RICH BREAKDOWN)
         if (loadingDetail) {
           currentLines.push(c.yellow('⚡ Loading session activity transcript...'));
         } else if (!currentDetail || !currentDetail.conversation.length) {
           currentLines.push(c.dim('No conversation activity records found.'));
         } else {
-          currentLines.push(c.brightCyan(c.bold('CONVERSATION & ACTIVITY TIMELINE')));
+          const filterLabel = roleFilter === 'agent' ? 'CODEX AGENT' : roleFilter.toUpperCase();
+          currentLines.push(c.brightCyan(c.bold(`CONVERSATION & ACTIVITY TIMELINE`)) + c.gray(`  [ FILTER: ${filterLabel} · Press 'r' to cycle ]`));
           currentLines.push('');
-          for (const item of currentDetail.conversation) {
-            if (item.role === 'user') {
-              const textLines = item.text ? item.text.split('\n') : ['(empty message)'];
-              currentLines.push(...formatCard('👤 USER', c.emerald, textLines, mainWidth - 4));
-              currentLines.push('');
-            } else if (item.role === 'assistant') {
-              const textLines: string[] = [];
-              if (item.text) textLines.push(...item.text.split('\n'));
-              if (item.activity?.tools.length) {
-                textLines.push(`⚡ Executed ${item.activity.tools.length} tool calls`);
+
+          let conversationList = currentDetail.conversation;
+          if (roleFilter === 'user') conversationList = conversationList.filter((m) => m.role === 'user' && m.kind !== 'internal_review');
+          else if (roleFilter === 'agent') conversationList = conversationList.filter((m) => m.role === 'assistant');
+          else if (roleFilter === 'review') conversationList = conversationList.filter((m) => m.kind === 'internal_review');
+
+          if (conversationList.length === 0) {
+            currentLines.push(c.dim(`No messages match the active role filter [${filterLabel}].`));
+          } else {
+            for (const item of conversationList) {
+              if (item.kind === 'internal_review') {
+                const textLines = item.text ? item.text.split('\n') : ['(empty review entry)'];
+                currentLines.push(...formatCard('🛡️ INTERNAL REVIEW', c.yellow, textLines, mainWidth - 4));
+                currentLines.push('');
+              } else if (item.role === 'user') {
+                const textLines = item.text ? item.text.split('\n') : ['(empty message)'];
+                currentLines.push(...formatCard('👤 USER', c.emerald, textLines, mainWidth - 4));
+                currentLines.push('');
+              } else if (item.role === 'assistant') {
+                const cardLines: string[] = [];
+                if (item.activity?.model.name) {
+                  cardLines.push(c.gray(`Model: ${item.activity.model.name}`));
+                }
+
+                const totalTurnTokens = activityTotal(item.activity);
+                if (totalTurnTokens > 0) {
+                  let inTokens = 0, cachedTokens = 0, outTokens = 0, reasoningTokens = 0;
+                  for (const req of item.activity?.modelRequests ?? []) {
+                    inTokens += req.usage.inputTokens ?? 0;
+                    cachedTokens += req.usage.cachedInputTokens ?? 0;
+                    outTokens += req.usage.outputTokens ?? 0;
+                    reasoningTokens += req.usage.reasoningOutputTokens ?? 0;
+                  }
+                  cardLines.push(c.yellow(`Tokens: ${formatNumber(totalTurnTokens)} total (In: ${formatNumber(inTokens)}, Cached: ${formatNumber(cachedTokens)}, Out: ${formatNumber(outTokens)}, Reasoning: ${formatNumber(reasoningTokens)})`));
+                  cardLines.push('');
+                }
+
+                if (item.text) {
+                  cardLines.push(...item.text.split('\n'));
+                }
+
+                if (item.activity?.tools.length) {
+                  cardLines.push('');
+                  cardLines.push(c.purple(`⚡ Tools Executed (${item.activity.tools.length}):`));
+                  for (const tool of item.activity.tools) {
+                    const durStr = tool.durationMs ? `${tool.durationMs}ms` : 'exec';
+                    cardLines.push(`  • ${tool.name} (${durStr})`);
+                  }
+                }
+
+                if (item.activity?.edits.length) {
+                  cardLines.push('');
+                  cardLines.push(c.emerald(`✏️ Code Edits:`));
+                  for (const edit of item.activity.edits) {
+                    for (const f of edit.files) {
+                      cardLines.push(`  • ${f.path}${f.operation ? ` (${f.operation})` : ''}`);
+                    }
+                  }
+                }
+
+                currentLines.push(...formatCard('🤖 CODEX AGENT', c.cyan, cardLines, mainWidth - 4));
+                currentLines.push('');
               }
-              currentLines.push(...formatCard('🤖 ASSISTANT', c.cyan, textLines, mainWidth - 4));
-              currentLines.push('');
             }
           }
         }
+
       } else if (activeTab === 2) {
-        // TOOLS TAB
+        // ANALYTICS TAB (RESOURCE CONSUMPTION & TOKEN USAGE VISUALIZER)
+        if (loadingDetail) {
+          currentLines.push(c.yellow('⚡ Computing session analytics & token profile...'));
+        } else if (!currentDetail) {
+          currentLines.push(c.dim('No session detail loaded for analytics.'));
+        } else {
+          const stats = computeUsageStats(currentDetail);
+          const topSpikes = computeTopTokenTurns(currentDetail, stats);
+          const profile = computeToolUsageProfile(currentDetail);
+
+          currentLines.push(c.brightCyan(c.bold('📊 SESSION RESOURCE & TOKEN ANALYTICS')));
+          currentLines.push('');
+
+          // 1. CONTEXT WINDOW & CACHE EFFICIENCY
+          currentLines.push(...formatCard('CONTEXT WINDOW & CACHE EFFICIENCY', c.yellow, [
+            `Saturation Meter ${progressBar(stats.saturationPct, 22)}`,
+            `Window Capacity  ${formatNumber(stats.latestTotal)} / ${formatNumber(stats.maxContext)} tokens`,
+            `Cache Hit Ratio  ${stats.cacheHitRatio}% (${formatNumber(stats.latestCached)} / ${formatNumber(stats.latestInput)} input tokens)`,
+            `Reasoning Ratio  ${stats.reasoningRatio}% (${formatNumber(stats.latestReasoning)} / ${formatNumber(stats.latestOutput)} output tokens)`,
+          ], mainWidth - 4));
+          currentLines.push('');
+
+          // 2. TIME & RESOURCE PROFILE
+          currentLines.push(...formatCard('TIME & RESOURCE PROFILE', c.purple, [
+            `Tool Execution   ${stats.totalToolMs} ms measured tool work`,
+            `Overhead/Model   ${stats.totalOtherMs} ms model/system time`,
+            `Code Edits       ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} unique files`,
+            `Snapshots        ${stats.snapshotCount} usage snapshots · ${stats.modelStepCount} model steps`,
+          ], mainWidth - 4));
+          currentLines.push('');
+
+          // 3. TOP TOKEN-HEAVY TURN SPIKES (TOP 5)
+          const spikeLines: string[] = [];
+          if (topSpikes.length === 0) {
+            spikeLines.push('No token usage spikes recorded.');
+          } else {
+            for (const spike of topSpikes) {
+              spikeLines.push(c.bold(`Turn #${spike.turnNumber} — ${formatNumber(spike.totalTokens)} tokens (${spike.shareOfSessionPct}% of session)`));
+              spikeLines.push(`  Model: ${spike.modelName} | In: ${formatNumber(spike.input)} (${formatNumber(spike.cached)} cached) | Out: ${formatNumber(spike.output)}`);
+              spikeLines.push(`  Prompt: "${spike.promptSnippet}"`);
+              spikeLines.push('');
+            }
+          }
+          currentLines.push(...formatCard('TOP TOKEN-HEAVY TURNS (SPIKES)', c.red, spikeLines, mainWidth - 4));
+          currentLines.push('');
+
+          // 4. TOOL INVOCATION PROFILE
+          const toolLines: string[] = [];
+          if (profile.tools.length === 0) {
+            toolLines.push('No tools invoked in this session.');
+          } else {
+            toolLines.push(`Total Tool Invocations: ${profile.totalInvocations}`);
+            toolLines.push('');
+            for (const item of profile.tools) {
+              toolLines.push(`• ${item.name} (${item.kind}): ${item.count} calls · ${item.durationMs} ms total`);
+            }
+          }
+          currentLines.push(...formatCard('TOOL INVOCATION & TIMING PROFILE', c.emerald, toolLines, mainWidth - 4));
+        }
+
+      } else if (activeTab === 3) {
+        // TOOLS TAB (TOOL EXECUTIONS & FILE PATCHES)
         if (loadingDetail) {
           currentLines.push(c.yellow('⚡ Loading tool executions...'));
         } else if (!currentDetail) {
           currentLines.push(c.dim('No detail loaded'));
         } else {
-          currentLines.push(c.purple(c.bold('TOOL EXECUTIONS')));
+          currentLines.push(c.purple(c.bold('TOOL EXECUTIONS & DETAILS')));
           currentLines.push('');
           let count = 0;
           for (const msg of currentDetail.conversation) {
             if (msg.activity?.tools?.length) {
               for (const tool of msg.activity.tools) {
                 count++;
-                const title = `⚙️ TOOL #${count}: ${tool.name} (${tool.durationMs ? tool.durationMs + 'ms' : 'exec'})`;
+                const statusSymbol = tool.status === 'completed' || tool.status === '0'
+                  ? c.emerald('✓ completed')
+                  : tool.status
+                    ? c.red(`✗ ${tool.status}`)
+                    : c.dim('exec');
+                const title = `⚙️ TOOL #${count}: ${tool.name} [${statusSymbol}]`;
                 const content: string[] = [];
-                if (tool.input) content.push(`Input:  ${sanitize(tool.input)}`);
-                if (tool.output) content.push(`Output: ${sanitize(tool.output)}`);
+                content.push(`Kind:     ${tool.kind}`);
+                content.push(`Duration: ${tool.durationMs !== undefined ? tool.durationMs + 'ms' : '—'}`);
+                if (tool.input) content.push(`Input:    ${sanitize(tool.input)}`);
+                if (tool.output) content.push(`Output:   ${sanitize(tool.output)}`);
                 currentLines.push(...formatCard(title, c.purple, content, mainWidth - 4));
                 currentLines.push('');
               }
@@ -305,7 +656,8 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           }
           if (!count) currentLines.push(c.dim('No tool execution records found.'));
         }
-      } else if (activeTab === 3) {
+
+      } else if (activeTab === 4) {
         // METADATA TAB
         currentLines.push(c.gray('RAW SESSION INVENTORY METADATA:'));
         currentLines.push('');
@@ -327,13 +679,17 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     }
 
     // 8. Footer Status Bar
-    const statusHelp = activePane === 'sidebar'
-      ? ` [TAB] Switch to Transcript Focus | [↑/↓] Sessions | [1-4] Tabs | [/] Filter | [q] Exit`
-      : ` [TAB] Switch to Sidebar Focus | [↑/↓/PgUp/PgDn] Scroll Transcript | [Home/End] Jump | [q] Exit`;
-    const footerText = isSearching
-      ? ` TYPE FILTER · [ENTER] Save · [ESC] Clear filter`
-      : statusHelp;
-    buffer.push(move(rows, 1) + '\x1b[K' + c.bgHeader(footerText.padEnd(cols - 1).slice(0, cols)));
+    if (notificationMessage) {
+      buffer.push(move(rows, 1) + '\x1b[K' + c.bgNotice(` ${notificationMessage} `.padEnd(cols - 1).slice(0, cols)));
+    } else {
+      const statusHelp = activePane === 'sidebar'
+        ? ` [TAB/→] Main Pane | [↑/↓] Select Session | [1-5] Tabs | [/] Search | [e] Export | [c] Copy ID | [q] Exit`
+        : ` [TAB] Sidebar | [←/→] Tabs | [↑/↓] Scroll | [1-5] Jump Tab | [r] Role Filter | [e] Export | [q] Exit`;
+      const footerText = isSearching
+        ? ` TYPE FILTER · [ENTER] Save · [ESC] Clear filter`
+        : statusHelp;
+      buffer.push(move(rows, 1) + '\x1b[K' + c.bgHeader(footerText.padEnd(cols - 1).slice(0, cols)));
+    }
 
     process.stdout.write(buffer.join(''));
   };
@@ -364,9 +720,34 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     if (str === 'q') cleanup();
 
     const filtered = getFilteredSessions();
+    const selectedSession = filtered[selectedIndex];
 
     if (key.name === 'tab') {
       activePane = activePane === 'sidebar' ? 'main' : 'sidebar';
+      render();
+      return;
+    }
+
+    if (str === 'e' && currentDetail) {
+      try {
+        const file = exportSessionJson(currentDetail);
+        notify(`Exported session JSON to: ${file}`);
+      } catch (err) {
+        notify(`Failed to export session JSON: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      return;
+    }
+
+    if (str === 'c' && selectedSession) {
+      notify(`Copied Session ID: ${selectedSession.id}`);
+      return;
+    }
+
+    if ((str === 'r' || str === 'f') && activeTab === 1) {
+      const filters: Array<'all' | 'user' | 'agent' | 'review'> = ['all', 'user', 'agent', 'review'];
+      const nextIdx = (filters.indexOf(roleFilter) + 1) % filters.length;
+      roleFilter = filters[nextIdx];
+      rightScrollOffset = 0;
       render();
       return;
     }
@@ -388,13 +769,24 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         activePane = 'main';
       }
     } else {
-      // Main Transcript Focus Controls
-      if (key.name === 'up' || str === 'k') {
+      // Main Content Focus Controls
+      if (key.name === 'right' || str === 'l') {
+        if (activeTab < 4) {
+          activeTab++;
+          rightScrollOffset = 0;
+        }
+      } else if (key.name === 'left' || str === 'h') {
+        if (activeTab > 0) {
+          activeTab--;
+          rightScrollOffset = 0;
+        } else {
+          // On first tab (Overview), left arrow switches focus to Sidebar
+          activePane = 'sidebar';
+        }
+      } else if (key.name === 'up' || str === 'k') {
         rightScrollOffset = Math.max(0, rightScrollOffset - 1);
       } else if (key.name === 'down' || str === 'j') {
         rightScrollOffset++;
-      } else if (key.name === 'left' || str === 'h') {
-        activePane = 'sidebar';
       } else if (key.name === 'pageup') {
         rightScrollOffset = Math.max(0, rightScrollOffset - 8);
       } else if (key.name === 'pagedown') {
@@ -420,6 +812,9 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       rightScrollOffset = 0;
     } else if (str === '4') {
       activeTab = 3;
+      rightScrollOffset = 0;
+    } else if (str === '5') {
+      activeTab = 4;
       rightScrollOffset = 0;
     }
 
@@ -476,11 +871,21 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       } else if (x > sidebarWidth) {
         activePane = 'main';
         if (y === 2) { // Click Tab Header
-          if (x < sidebarWidth + 14) activeTab = 0;
-          else if (x < sidebarWidth + 28) activeTab = 1;
-          else if (x < sidebarWidth + 39) activeTab = 2;
-          else activeTab = 3;
-          rightScrollOffset = 0;
+          const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Metadata '];
+          let currentX = sidebarWidth + 3;
+          let clickedTab = -1;
+          for (let i = 0; i < tabLabels.length; i++) {
+            const tabLen = `[${i + 1}]${tabLabels[i]}`.length;
+            if (x >= currentX && x < currentX + tabLen + 1) {
+              clickedTab = i;
+              break;
+            }
+            currentX += tabLen + 1;
+          }
+          if (clickedTab !== -1) {
+            activeTab = clickedTab;
+            rightScrollOffset = 0;
+          }
         }
         render();
       }
