@@ -201,57 +201,165 @@ button, input {
 }
 
 /* Role Cards & Message Distinction */
+/* Conversation Layout - Native Codex App Style */
 .conversation {
 	display: flex;
 	flex-direction: column;
-	gap: 20px;
+	gap: 28px;
+	width: 100%;
 }
 
 .chat-card {
-	border-radius: 12px;
-	border: 1px solid var(--line);
-	background: var(--panel);
-	overflow: hidden;
-	transition: box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.chat-card:hover {
-	box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+	transition: all 0.2s ease;
 }
 
-/* Distinct User Card */
+/* User Message - Right Aligned Card Bubble */
 .chat-card.from-user {
-	background: var(--user-bg);
-	border-color: var(--line);
-	border-left: 4px solid var(--user-border);
-	box-shadow: var(--user-shadow);
+	align-self: flex-end;
+	width: 84%;
+	max-width: 84%;
+	border-radius: 16px;
+	border: 1px solid var(--line);
+	background: var(--panel-subtle);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
+	overflow: hidden;
 }
-.chat-card.from-user .role-badge {
-	background: var(--user-badge-bg);
-	color: var(--user-badge-text);
+@media (max-width: 768px) {
+	.chat-card.from-user {
+		width: 100%;
+		max-width: 100%;
+	}
 }
 
-/* Distinct Agent Card */
+.chat-card.from-user .card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 8px 14px;
+	border-bottom: 1px solid var(--line-subtle);
+	font-size: 11px;
+	background: rgba(0, 0, 0, 0.15);
+}
+
+.chat-card.from-user .card-body {
+	padding: 14px 16px;
+}
+
+/* Codex Agent Message - Left Aligned Open Layout (NO CARD FRAME) */
 .chat-card.from-agent {
-	background: var(--agent-bg);
-	border-color: var(--line);
-	border-left: 4px solid var(--agent-border);
-	box-shadow: var(--agent-shadow);
-}
-.chat-card.from-agent .role-badge {
-	background: var(--agent-badge-bg);
-	color: var(--agent-badge-text);
+	align-self: flex-start;
+	width: 100%;
+	max-width: 100%;
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	border-radius: 0;
 }
 
-/* Distinct Internal Review Card */
-.chat-card.internal-review {
-	background: var(--review-bg);
-	border-color: var(--line);
-	border-left: 4px solid var(--review-border);
-	box-shadow: var(--review-shadow);
+.chat-card.from-agent .card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 6px 0 10px 0;
+	border-bottom: 1px solid var(--line-subtle);
+	font-size: 12px;
+	background: transparent;
 }
-.chat-card.internal-review .role-badge {
-	background: var(--review-badge-bg);
-	color: var(--review-badge-text);
+
+.chat-card.from-agent .card-body {
+	padding: 14px 0 4px 0;
+}
+
+/* Execution Details & Tool Calls Bar (CLI / Developer Theme) */
+.activity-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+	height: 34px;
+	padding: 0 14px;
+	border-radius: 8px;
+	border: 1px solid var(--line-subtle);
+	background: var(--panel-subtle);
+	color: var(--ink);
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	font-weight: 500;
+	transition: all 0.15s ease;
+	width: fit-content;
+	max-width: 100%;
+	cursor: pointer;
+}
+.activity-toggle:hover {
+	background: var(--field);
+	border-color: var(--line);
+}
+
+/* Security Review - Frameless Inline Indicator */
+.chat-card.internal-review {
+	align-self: flex-start;
+	width: auto;
+	max-width: 100%;
+	border: none !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	opacity: 0.8;
+	cursor: pointer;
+	user-select: none;
+	padding: 2px 0;
+	margin: 2px 0;
+	transition: opacity 0.15s ease;
+}
+
+.chat-card.internal-review:hover {
+	opacity: 1;
+}
+
+.chat-card.internal-review .card-header {
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+	height: auto;
+	padding: 0;
+	border: none !important;
+	background: transparent !important;
+	color: var(--muted);
+	font-size: 12px;
+	font-weight: 500;
+}
+
+.chat-card.internal-review .card-body {
+	padding: 8px 0 0 0;
+	border-left: 2px solid var(--line);
+	margin-left: 6px;
+	padding-left: 14px;
+}
+
+/* Selected Card Highlight - Zero Layout Shift Outward Outline & Smooth Internal Transition */
+.chat-card {
+	transition: outline 0.15s ease, outline-offset 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.chat-card.selected-card {
+	outline: 2px solid #6366f1 !important;
+	outline-offset: 10px !important;
+	box-shadow: 0 0 0 10px rgba(99, 102, 241, 0.12), 0 6px 24px rgba(99, 102, 241, 0.25) !important;
+}
+
+.chat-card.from-user.selected-card {
+	background: rgba(99, 102, 241, 0.12) !important;
+}
+
+.chat-card.from-agent.selected-card {
+	background: rgba(99, 102, 241, 0.06) !important;
+}
+
+.chat-card.internal-review.selected-card {
+	background: rgba(99, 102, 241, 0.08) !important;
+	opacity: 1;
 }
 
 .card-header {
@@ -282,8 +390,8 @@ button, input {
 /* Markdown styling inside messages */
 .markdown {
 	color: var(--ink);
-	font-size: 14.5px;
-	line-height: 1.65;
+	font-size: 15.5px;
+	line-height: 1.7;
 }
 .markdown > :first-child {
 	margin-top: 0;
@@ -347,26 +455,30 @@ button, input {
 
 /* Activity & Tool execution accordions */
 .activity-box {
-	margin-top: 14px;
-	border-top: 1px solid var(--line);
+	margin-top: 12px;
+	border-top: 1px solid var(--line-subtle);
 	padding-top: 10px;
 }
 .activity-toggle {
-	width: 100%;
-	display: flex;
+	display: inline-flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 8px 12px;
-	border: 1px solid var(--line);
+	gap: 16px;
+	padding: 6px 14px;
+	border: 1px solid var(--line-subtle);
 	border-radius: 8px;
 	background: var(--panel-subtle);
 	color: var(--ink);
 	cursor: pointer;
 	font-size: 12px;
-	transition: background 0.15s ease;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	transition: all 0.15s ease;
+	width: fit-content;
+	max-width: 100%;
 }
 .activity-toggle:hover {
 	background: var(--field);
+	border-color: var(--line);
 }
 
 .activity-body {

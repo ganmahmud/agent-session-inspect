@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { SvelteSet } from 'svelte/reactivity';
+	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
 	import { markdown, toPlainText } from '$lib/markdown';
 	import { countTokens } from '$lib/tokenizer';
 	import {
@@ -18,10 +18,24 @@
 		MessageSquare,
 		Code,
 		FileText,
-		Download
+		Download,
+		Activity,
+		Cpu,
+		Layers,
+		HardDrive,
+		Percent,
+		ArrowUpRight,
+		Flame,
+		Wrench,
+		FileCode,
+		Server
 	} from '@lucide/svelte';
 	import TokenBreakdownVisualizer from '$lib/components/TokenBreakdownVisualizer.svelte';
-	import type { ReplyActivity, SessionDetail, UsageSnapshot } from '../../../../../src/types.ts';
+	import type {
+		ConversationEntry,
+		ReplyActivity,
+		SessionDetail
+	} from '../../../../../src/types.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -56,9 +70,6 @@
 	};
 	const activityTotal = (activity?: ReplyActivity) =>
 		activity?.modelRequests.reduce((sum, request) => sum + (request.usage.totalTokens ?? 0), 0);
-	const snapshotTotal = (snapshot: UsageSnapshot) => snapshot.usage.totalTokens ?? 0;
-	const maxSnapshotTotal = () => Math.max(1, ...(detail.usage.snapshots.map(snapshotTotal) ?? [0]));
-	const percent = (value: number, total: number) => Math.max(2, Math.round((value / total) * 100));
 
 	const filteredConversation = () => {
 		let list = detail.conversation;
@@ -83,6 +94,17 @@
 		}
 	}
 
+	function handleCardClick(message: ConversationEntry, event: MouseEvent | KeyboardEvent) {
+		if (event.metaKey || event.ctrlKey) {
+			event.preventDefault();
+			toggleMessageSelect(message.id);
+			return;
+		}
+		if (message.kind === 'internal_review') {
+			toggleReview(message.id);
+		}
+	}
+
 	function selectAllMessages() {
 		for (const m of filteredConversation()) {
 			selectedMessageIds.add(m.id);
@@ -91,6 +113,15 @@
 
 	function clearMessageSelection() {
 		selectedMessageIds.clear();
+		if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+			document.activeElement.blur();
+		}
+	}
+
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			clearMessageSelection();
+		}
 	}
 
 	function exportSelectedMessages() {
@@ -235,13 +266,153 @@
 			}
 		}, 4000);
 	}
+
+	// Advanced Usage & Resource Analytics Derived States
+	let usageStats = $derived.by(() => {
+		const latest = detail.usage.latest;
+		const snapshots = detail.usage.snapshots ?? [];
+		const maxContext = latest?.modelContextWindow || 200000;
+		const latestTotal = latest
+			? (latest.usage.totalTokens ??
+				(latest.usage.inputTokens ?? 0) + (latest.usage.outputTokens ?? 0))
+			: 0;
+		const saturationPct = Math.min(100, Math.round((latestTotal / maxContext) * 100));
+
+		const latestInput = latest?.usage.inputTokens ?? 0;
+		const latestCached = latest?.usage.cachedInputTokens ?? 0;
+		const latestFresh = Math.max(0, latestInput - latestCached);
+		const latestOutput = latest?.usage.outputTokens ?? 0;
+		const latestReasoning = latest?.usage.reasoningOutputTokens ?? 0;
+
+		const cacheHitRatio = latestInput > 0 ? Math.round((latestCached / latestInput) * 100) : 0;
+		const reasoningRatio =
+			latestOutput > 0 ? Math.round((latestReasoning / latestOutput) * 100) : 0;
+
+		let totalToolMs = 0;
+		let totalOtherMs = 0;
+		for (const m of detail.conversation) {
+			if (m.role === 'assistant' && m.activity?.breakdown) {
+				totalToolMs += m.activity.breakdown.measuredToolMs ?? 0;
+				totalOtherMs += m.activity.breakdown.otherElapsedMs ?? 0;
+			}
+		}
+
+		return {
+			maxContext,
+			latestTotal,
+			saturationPct,
+			latestInput,
+			latestCached,
+			latestFresh,
+			latestOutput,
+			latestReasoning,
+			cacheHitRatio,
+			reasoningRatio,
+			totalToolMs,
+			totalOtherMs,
+			snapshotCount: snapshots.length,
+			modelStepCount: detail.usage.modelStepCount ?? 0
+		};
+	});
+
+	// Top Token Heavy Spikes (Ranks turns by total token footprint)
+	let topTokenTurns = $derived.by(() => {
+		const assistantMsgs = detail.conversation.filter((m) => m.role === 'assistant');
+		const grandTotal = usageStats.latestTotal || 1;
+
+		const turns = assistantMsgs.map((m, turnIdx) => {
+			const total = activityTotal(m.activity) ?? 0;
+			const msgIdx = detail.conversation.findIndex((x) => x.id === m.id);
+			const prevUserMsg =
+				msgIdx > 0
+					? detail.conversation
+							.slice(0, msgIdx)
+							.reverse()
+							.find((x) => x.role === 'user' && x.kind !== 'internal_review')
+					: undefined;
+
+			let input = 0;
+			let cached = 0;
+			let output = 0;
+			let reasoning = 0;
+
+			for (const req of m.activity?.modelRequests ?? []) {
+				input += req.usage.inputTokens ?? 0;
+				cached += req.usage.cachedInputTokens ?? 0;
+				output += req.usage.outputTokens ?? 0;
+				reasoning += req.usage.reasoningOutputTokens ?? 0;
+			}
+
+			const fresh = Math.max(0, input - cached);
+
+			return {
+				id: m.id,
+				timestamp: m.timestamp,
+				turnNumber: turnIdx + 1,
+				totalTokens: total,
+				shareOfSessionPct: Math.round((total / grandTotal) * 100),
+				promptSnippet: prevUserMsg?.text
+					? toPlainText(prevUserMsg.text).slice(0, 120)
+					: 'Assistant response',
+				modelName: m.activity?.model.name ?? 'Model',
+				stepCount: m.activity?.modelRequests.length ?? 0,
+				input,
+				cached,
+				fresh,
+				output,
+				reasoning
+			};
+		});
+
+		return turns.sort((a, b) => b.totalTokens - a.totalTokens).slice(0, 5);
+	});
+
+	// Execution & Tool Activity Profile
+	let toolUsageProfile = $derived.by(() => {
+		const map = new SvelteMap<
+			string,
+			{ name: string; kind: string; count: number; durationMs: number }
+		>();
+		let totalEditsCount = 0;
+		const editedFilesSet = new SvelteSet<string>();
+
+		for (const m of detail.conversation) {
+			if (m.role === 'assistant' && m.activity) {
+				for (const t of m.activity.tools ?? []) {
+					const key = t.name ?? t.kind ?? 'tool';
+					const current = map.get(key) ?? { name: key, kind: t.kind, count: 0, durationMs: 0 };
+					current.count += 1;
+					current.durationMs += t.durationMs ?? 0;
+					map.set(key, current);
+				}
+				for (const edit of m.activity.edits ?? []) {
+					totalEditsCount += 1;
+					for (const f of edit.files) {
+						editedFilesSet.add(f.path);
+					}
+				}
+			}
+		}
+
+		const list = Array.from(map.values()).sort((a, b) => b.count - a.count);
+		const totalInvocations = list.reduce((sum, item) => sum + item.count, 0);
+
+		return {
+			tools: list,
+			totalInvocations,
+			totalEditsCount,
+			uniqueEditedFilesCount: editedFilesSet.size
+		};
+	});
 </script>
 
 <svelte:head>
 	<title>{title(detail)} — Agent Session Inspect</title>
 </svelte:head>
 
-<div class="relative mx-auto max-w-245 space-y-5">
+<svelte:window onkeydown={handleGlobalKeydown} />
+
+<div class="relative mx-auto w-[90%] max-w-[90%] space-y-5">
 	<!-- Session Overview Header Box -->
 	<div class="rounded-2xl border border-(--line) bg-(--panel) p-5 shadow-xs sm:p-6">
 		<div class="github-light-strip"></div>
@@ -497,32 +668,27 @@
 					class:from-user={message.role === 'user' && message.kind !== 'internal_review'}
 					class:from-agent={message.role === 'assistant'}
 					class:internal-review={message.kind === 'internal_review'}
-					class:ring-2={selectedMessageIds.has(message.id)}
-					class:ring-indigo-500={selectedMessageIds.has(message.id)}
+					class:selected-card={selectedMessageIds.has(message.id)}
+					role="button"
+					tabindex="0"
+					onclick={(e) => handleCardClick(message, e)}
+					onkeydown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							handleCardClick(message, e);
+						}
+					}}
 				>
 					<!-- Card Header -->
 					<div class="card-header">
 						<div class="flex min-w-0 items-center gap-2">
-							<input
-								type="checkbox"
-								checked={selectedMessageIds.has(message.id)}
-								onchange={() => toggleMessageSelect(message.id)}
-								class="h-4 w-4 cursor-pointer rounded border-(--line) text-indigo-600 focus:ring-indigo-500"
-								title="Select message for batch export"
-							/>
 							{#if message.kind === 'internal_review'}
 								<span class="role-badge shrink-0">
-									<ShieldCheck class="h-3.5 w-3.5" />
+									<ShieldCheck class="h-3.5 w-3.5 text-(--muted)" />
 									Security Review
 								</span>
-								{#if !expandedReviews.has(message.id)}
-									<span class="truncate text-xs font-medium text-(--muted) italic">
-										{toPlainText(message.text).slice(0, 90)}
-									</span>
-								{/if}
 							{:else if message.role === 'assistant'}
 								<span class="role-badge">
-									<Sparkles class="h-3.5 w-3.5" />
+									<Sparkles class="h-3.5 w-3.5 text-sky-400" />
 									Codex Agent
 								</span>
 								{#if message.activity?.model.name}
@@ -531,6 +697,30 @@
 									>
 										{message.activity.model.name}
 									</span>
+								{/if}
+								{#if message.activity?.breakdown.measuredToolMs}
+									<button
+										type="button"
+										class="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-(--line-subtle) bg-(--panel-subtle)/50 px-2.5 py-0.5 font-mono text-xs font-medium text-(--muted) transition-all hover:bg-(--field) hover:text-(--ink)"
+										onclick={() => toggleActivity(message.id)}
+										title="Toggle execution details and tool calls"
+									>
+										<span>Worked for {duration(message.activity.breakdown.measuredToolMs)}</span>
+										{#if message.activity.tools.length > 0}
+											<span class="text-(--muted)"
+												>· {message.activity.tools.length} tool{message.activity.tools.length === 1
+													? ''
+													: 's'}</span
+											>
+										{/if}
+										<ChevronRight
+											class="h-3.5 w-3.5 transition-transform duration-200 {expandedActivities.has(
+												message.id
+											)
+												? 'rotate-90'
+												: ''}"
+										/>
+									</button>
 								{/if}
 							{:else}
 								<span class="role-badge">
@@ -600,10 +790,23 @@
 
 							<span class="font-medium text-(--muted)">{clock(message.timestamp)}</span>
 
-							<!-- Action Icon Group (Copy & Export) -->
+							<!-- Action Icon Group (Select, Copy & Export) -->
 							<div
-								class="flex items-center gap-1 border-l border-(--line) pl-1.5 opacity-80 transition-opacity hover:opacity-100"
+								class="flex items-center gap-1.5 border-l border-(--line) pl-2 opacity-80 transition-opacity hover:opacity-100"
 							>
+								<label
+									class="inline-flex cursor-pointer items-center justify-center rounded p-0.5 text-(--muted) hover:text-(--ink)"
+									title="Select message for batch export (or Cmd/Ctrl + Click)"
+								>
+									<input
+										type="checkbox"
+										checked={selectedMessageIds.has(message.id)}
+										onclick={(e) => e.stopPropagation()}
+										onchange={() => toggleMessageSelect(message.id)}
+										class="h-3.5 w-3.5 cursor-pointer rounded border-(--line) text-indigo-500 focus:ring-indigo-500"
+									/>
+								</label>
+
 								<button
 									type="button"
 									class="inline-flex items-center justify-center rounded p-1 text-(--muted) transition-colors hover:bg-(--panel-subtle) hover:text-(--ink)"
@@ -768,109 +971,347 @@
 	{:else}
 		<!-- Usage & Token Analytics View -->
 		<div class="space-y-6">
+			<!-- Intent-Focused Header Banner -->
 			<div
-				class="flex items-center gap-2 rounded-xl border border-(--accent)/30 bg-(--accent-soft) p-4 text-xs text-(--accent)"
+				class="flex flex-col gap-3 rounded-xl border border-(--line) bg-(--panel) p-5 shadow-xs sm:flex-row sm:items-center sm:justify-between"
 			>
-				<Zap class="h-4 w-4 shrink-0" />
-				<span>Token totals are reported directly from Codex model execution snapshots.</span>
-			</div>
-
-			<!-- Usage Stat Cards Grid -->
-			<div class="usage-cards-grid">
-				<div class="usage-stat-card">
-					<span>Input Tokens</span>
-					<b>{number(detail.usage.latest?.usage.inputTokens)}</b>
+				<div class="space-y-1">
+					<div class="flex items-center gap-2">
+						<Activity class="h-4.5 w-4.5 text-(--accent-secondary)" />
+						<h3 class="text-base font-bold text-(--ink) sm:text-lg">
+							Session Context & Performance Diagnostics
+						</h3>
+					</div>
+					<p class="text-xs text-(--muted) sm:text-sm">
+						High-intent insights on context capacity saturation, prompt cache efficiency, and model
+						step resource distribution.
+					</p>
 				</div>
-				<div class="usage-stat-card">
-					<span>Cached Input</span>
-					<b>{number(detail.usage.latest?.usage.cachedInputTokens)}</b>
-				</div>
-				<div class="usage-stat-card">
-					<span>Output Tokens</span>
-					<b>{number(detail.usage.latest?.usage.outputTokens)}</b>
-				</div>
-				<div class="usage-stat-card">
-					<span>Reasoning</span>
-					<b>{number(detail.usage.latest?.usage.reasoningOutputTokens)}</b>
-				</div>
-				<div class="usage-stat-card">
-					<span>Model Steps</span>
-					<b>{number(detail.usage.modelStepCount)}</b>
+				<div class="flex items-center gap-2">
+					<span
+						class="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-emerald-400"
+					>
+						<span class="h-2 w-2 rounded-full bg-emerald-400"></span>
+						{usageStats.saturationPct}% Context Window Used
+					</span>
 				</div>
 			</div>
 
-			<!-- Token Growth Timeline -->
-			<div class="space-y-4 rounded-xl border border-(--line) bg-(--panel) p-5 shadow-sm">
+			<!-- Executive KPI Metrics Grid -->
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				<!-- KPI 1: Context Ceiling Saturation -->
+				<div class="space-y-2.5 rounded-xl border border-(--line) bg-(--panel) p-4.5 shadow-xs">
+					<div
+						class="flex items-center justify-between text-xs font-semibold text-(--muted) sm:text-sm"
+					>
+						<span>Context Saturation</span>
+						<HardDrive class="h-4 w-4 text-(--muted)" />
+					</div>
+					<div class="flex items-baseline justify-between">
+						<b class="font-mono text-xl text-(--ink) sm:text-2xl"
+							>{number(usageStats.latestTotal)}</b
+						>
+						<span class="font-mono text-xs text-(--muted) sm:text-sm"
+							>/ {number(usageStats.maxContext)}</span
+						>
+					</div>
+					<div class="h-2 w-full overflow-hidden rounded-full bg-(--field)">
+						<div
+							class="h-full transition-all duration-300"
+							style:width={`${usageStats.saturationPct}%`}
+							class:bg-emerald-500={usageStats.saturationPct < 60}
+							class:bg-amber-500={usageStats.saturationPct >= 60 && usageStats.saturationPct < 85}
+							class:bg-rose-500={usageStats.saturationPct >= 85}
+						></div>
+					</div>
+					<p class="text-xs text-(--muted)">
+						{usageStats.saturationPct < 60
+							? 'Headroom healthy'
+							: usageStats.saturationPct < 85
+								? 'Moderate context load'
+								: 'High context saturation'}
+					</p>
+				</div>
+
+				<!-- KPI 2: Prompt Cache Hit Rate -->
+				<div class="space-y-2.5 rounded-xl border border-(--line) bg-(--panel) p-4.5 shadow-xs">
+					<div
+						class="flex items-center justify-between text-xs font-semibold text-(--muted) sm:text-sm"
+					>
+						<span>Prompt Cache Savings</span>
+						<Percent class="h-4 w-4 text-teal-400" />
+					</div>
+					<div class="flex items-baseline gap-2">
+						<b class="font-mono text-xl text-teal-400 sm:text-2xl">{usageStats.cacheHitRatio}%</b>
+						<span class="text-xs text-(--muted)">cached input</span>
+					</div>
+					<div class="font-mono text-xs text-(--muted) sm:text-sm">
+						{number(usageStats.latestCached)} of {number(usageStats.latestInput)} prompt tokens
+					</div>
+					<p class="text-xs font-medium text-teal-400/90">
+						{usageStats.cacheHitRatio > 70
+							? 'High prompt reuse (fast latency)'
+							: 'Standard prompt caching'}
+					</p>
+				</div>
+
+				<!-- KPI 3: Reasoning Overhead -->
+				<div class="space-y-2.5 rounded-xl border border-(--line) bg-(--panel) p-4.5 shadow-xs">
+					<div
+						class="flex items-center justify-between text-xs font-semibold text-(--muted) sm:text-sm"
+					>
+						<span>Reasoning Output</span>
+						<Cpu class="h-4 w-4 text-purple-400" />
+					</div>
+					<div class="flex items-baseline gap-2">
+						<b class="font-mono text-xl text-purple-400 sm:text-2xl"
+							>{number(usageStats.latestReasoning)}</b
+						>
+						<span class="text-xs text-(--muted)">({usageStats.reasoningRatio}% of output)</span>
+					</div>
+					<div class="font-mono text-xs text-(--muted) sm:text-sm">
+						{number(usageStats.latestOutput)} total net output
+					</div>
+					<p class="text-xs font-medium text-purple-400/90">
+						Model internal chain-of-thought tokens
+					</p>
+				</div>
+
+				<!-- KPI 4: Execution Step Density -->
+				<div class="space-y-2.5 rounded-xl border border-(--line) bg-(--panel) p-4.5 shadow-xs">
+					<div
+						class="flex items-center justify-between text-xs font-semibold text-(--muted) sm:text-sm"
+					>
+						<span>Execution Cycles</span>
+						<Layers class="h-4 w-4 text-sky-400" />
+					</div>
+					<div class="flex items-baseline gap-2">
+						<b class="font-mono text-xl text-sky-400 sm:text-2xl">{usageStats.modelStepCount}</b>
+						<span class="text-xs text-(--muted)">model steps</span>
+					</div>
+					<div class="font-mono text-xs text-(--muted) sm:text-sm">
+						{duration(usageStats.totalToolMs)} total tool work
+					</div>
+					<p class="text-xs text-(--muted)">
+						{usageStats.snapshotCount} reported usage snapshots
+					</p>
+				</div>
+			</div>
+
+			<!-- Section 2: Token & Cost Heavy Spikes (Ranks largest token consumers) -->
+			<div class="space-y-4 rounded-xl border border-(--line) bg-(--panel) p-5.5 shadow-sm">
 				<div class="flex items-center justify-between">
 					<div>
-						<h3 class="text-sm font-bold text-(--ink)">Reported Token Growth Timeline</h3>
-						<p class="text-xs text-(--muted)">
-							Cumulative tokens recorded across execution snapshots
+						<div class="flex items-center gap-2">
+							<Flame class="h-4.5 w-4.5 text-amber-500" />
+							<h3 class="text-base font-bold text-(--ink)">
+								Token & Cost Heavy-Hitters (Spike Analysis)
+							</h3>
+						</div>
+						<p class="text-xs text-(--muted) sm:text-sm">
+							Top turns consuming the largest token footprint in this session
 						</p>
 					</div>
 					<span
-						class="rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-bold text-(--muted) uppercase"
+						class="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 font-mono text-xs font-bold text-amber-400"
 					>
-						Snapshot Stream
+						Top 5 Spikes
 					</span>
 				</div>
 
-				{#if detail.usage.snapshots.length}
-					<div class="max-h-100 space-y-3 overflow-y-auto pr-1">
-						{#each detail.usage.snapshots as snapshot (snapshot.id)}
-							<div class="grid grid-cols-[60px_minmax(100px,1fr)_90px] items-center gap-3 text-xs">
-								<span class="font-mono text-(--muted)">{clock(snapshot.timestamp)}</span>
-								<div class="snapshot-bar-wrapper">
-									<div
-										class="snapshot-bar-fill"
-										style:width={`${percent(snapshotTotal(snapshot), maxSnapshotTotal())}%`}
-									></div>
+				{#if topTokenTurns.length}
+					<div class="space-y-3">
+						{#each topTokenTurns as turn, rank (turn.id)}
+							<div
+								class="space-y-2.5 rounded-xl border border-(--line-subtle) bg-(--panel-subtle)/40 p-4.5 transition-colors hover:bg-(--panel-subtle)/80"
+							>
+								<div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+									<div class="flex min-w-0 items-center gap-3">
+										<span
+											class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500/15 font-mono text-xs font-bold text-amber-400"
+										>
+											#{rank + 1}
+										</span>
+										<div class="min-w-0 space-y-1">
+											<div class="flex flex-wrap items-center gap-2">
+												<span class="font-mono text-xs font-bold text-(--ink) sm:text-sm"
+													>Turn #{turn.turnNumber}</span
+												>
+												<span class="font-mono text-xs text-(--muted)">{clock(turn.timestamp)}</span
+												>
+												<span
+													class="rounded bg-(--field) px-2 py-0.5 font-mono text-xs text-(--muted)"
+												>
+													{turn.modelName} ({turn.stepCount} step{turn.stepCount === 1 ? '' : 's'})
+												</span>
+											</div>
+											<p class="truncate text-xs text-(--ink)/90 italic sm:text-sm">
+												"{turn.promptSnippet}"
+											</p>
+										</div>
+									</div>
+
+									<div class="flex shrink-0 items-center gap-3.5">
+										<div class="text-right">
+											<b class="font-mono text-base text-amber-400">{number(turn.totalTokens)}</b>
+											<span class="block font-mono text-xs text-(--muted)"
+												>{turn.shareOfSessionPct}% of total</span
+											>
+										</div>
+										<button
+											type="button"
+											class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--line) bg-(--field) px-3 py-1.5 text-xs font-semibold text-sky-400 transition-colors hover:bg-(--panel) hover:underline"
+											onclick={(e) => openTokenBreakdown(turn.id, e)}
+										>
+											<span>Inspect Turn</span>
+											<ArrowUpRight class="h-3.5 w-3.5" />
+										</button>
+									</div>
 								</div>
-								<b class="text-right font-mono text-(--ink)">{number(snapshotTotal(snapshot))}</b>
+
+								<!-- Token Composition Pills -->
+								<div
+									class="flex flex-wrap items-center gap-2 border-t border-(--line-subtle)/60 pt-2 font-mono text-xs"
+								>
+									<span class="rounded-md bg-blue-500/10 px-2.5 py-1 font-medium text-blue-400">
+										Fresh: {number(turn.fresh)}
+									</span>
+									{#if turn.cached > 0}
+										<span class="rounded-md bg-teal-500/10 px-2.5 py-1 font-medium text-teal-400">
+											Cached: {number(turn.cached)}
+										</span>
+									{/if}
+									<span class="rounded-md bg-amber-500/10 px-2.5 py-1 font-medium text-amber-400">
+										Output: {number(turn.output)}
+									</span>
+									{#if turn.reasoning > 0}
+										<span
+											class="rounded-md bg-purple-500/10 px-2.5 py-1 font-medium text-purple-400"
+										>
+											Reasoning: {number(turn.reasoning)}
+										</span>
+									{/if}
+								</div>
 							</div>
 						{/each}
 					</div>
 				{:else}
-					<p class="py-4 text-center text-xs text-(--muted)">
-						No token growth snapshots available for this session.
+					<p class="py-4 text-center text-xs text-(--muted) sm:text-sm">
+						No token spikes recorded.
 					</p>
 				{/if}
 			</div>
 
-			<!-- Response Activity Breakdown Table -->
-			<div class="space-y-4 rounded-xl border border-(--line) bg-(--panel) p-5 shadow-sm">
-				<div>
-					<h3 class="text-sm font-bold text-(--ink)">Response Activity Summary</h3>
-					<p class="text-xs text-(--muted)">Recorded steps grouped under assistant responses</p>
+			<!-- Section 3: Tool & Execution Profile -->
+			<div class="space-y-4 rounded-xl border border-(--line) bg-(--panel) p-5.5 shadow-sm">
+				<div class="flex items-center justify-between">
+					<div>
+						<div class="flex items-center gap-2">
+							<Wrench class="h-4.5 w-4.5 text-sky-400" />
+							<h3 class="text-base font-bold text-(--ink)">Tool & Execution Activity Profile</h3>
+						</div>
+						<p class="text-xs text-(--muted) sm:text-sm">
+							Distribution of CLI commands, MCP tools, and file edits across the session
+						</p>
+					</div>
+					<div class="flex items-center gap-2 font-mono text-xs">
+						<span class="rounded-md bg-(--panel-subtle) px-2.5 py-1 font-medium text-(--muted)">
+							{toolUsageProfile.totalInvocations} tool calls
+						</span>
+						<span class="rounded-md bg-emerald-500/10 px-2.5 py-1 font-medium text-emerald-400">
+							{toolUsageProfile.uniqueEditedFilesCount} files edited
+						</span>
+					</div>
+				</div>
+
+				{#if toolUsageProfile.tools.length}
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						{#each toolUsageProfile.tools as tool (tool.name)}
+							<div
+								class="flex items-center justify-between rounded-xl border border-(--line-subtle) bg-(--panel-subtle)/30 p-3.5"
+							>
+								<div class="min-w-0 space-y-1">
+									<div class="flex items-center gap-2">
+										{#if tool.kind === 'exec'}
+											<Terminal class="h-4 w-4 shrink-0 text-sky-400" />
+										{:else if tool.kind === 'mcp'}
+											<Server class="h-4 w-4 shrink-0 text-purple-400" />
+										{:else}
+											<FileCode class="h-4 w-4 shrink-0 text-emerald-400" />
+										{/if}
+										<b class="truncate font-mono text-xs text-(--ink) sm:text-sm">{tool.name}</b>
+									</div>
+									<span class="block font-mono text-xs text-(--muted)">
+										{duration(tool.durationMs)} runtime
+									</span>
+								</div>
+
+								<span
+									class="ml-2 rounded-full border border-(--line) bg-(--field) px-3 py-0.5 font-mono text-xs font-bold text-(--ink) sm:text-sm"
+								>
+									{tool.count}×
+								</span>
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<p class="py-4 text-center text-xs text-(--muted) sm:text-sm">
+						No tool calls recorded in this session.
+					</p>
+				{/if}
+			</div>
+
+			<!-- Response Activity & Turn Latency Breakdown -->
+			<div class="space-y-4 rounded-xl border border-(--line) bg-(--panel) p-5.5 shadow-sm">
+				<div class="flex items-center justify-between">
+					<div>
+						<h3 class="text-base font-bold text-(--ink)">Assistant Turn Execution Breakdown</h3>
+						<p class="text-xs text-(--muted) sm:text-sm">
+							Step count, tool execution time, and model response metrics per turn
+						</p>
+					</div>
+					<span
+						class="rounded-md border border-(--line) bg-(--panel-subtle) px-2.5 py-1 font-mono text-xs font-medium text-(--muted)"
+					>
+						{detail.conversation.filter((m) => m.role === 'assistant').length} Turns
+					</span>
 				</div>
 
 				<div class="overflow-x-auto rounded-lg border border-(--line)">
 					<table>
 						<thead>
 							<tr>
-								<th>Response Time</th>
-								<th>Model</th>
-								<th>Steps</th>
-								<th>Recorded Tokens</th>
-								<th>Tool Duration</th>
-								<th>Unclassified Time</th>
+								<th class="text-xs">Turn Time</th>
+								<th class="text-xs">Model</th>
+								<th class="text-xs">Model Steps</th>
+								<th class="text-xs">Recorded Tokens</th>
+								<th class="text-xs">Tool Duration</th>
+								<th class="text-xs">Overhead / Model Time</th>
+								<th class="text-xs">Action</th>
 							</tr>
 						</thead>
 						<tbody>
-							{#each detail.conversation.filter((m) => m.role === 'assistant') as message (message.id)}
+							{#each detail.conversation.filter((m) => m.role === 'assistant') as message, index (message.id)}
 								<tr class="transition-colors hover:bg-(--panel-subtle)/60">
-									<td class="font-mono">{clock(message.timestamp)}</td>
-									<td class="font-mono">{message.activity?.model.name ?? 'Unavailable'}</td>
-									<td>{message.activity?.modelRequests.length ?? 0}</td>
-									<td>
+									<td class="font-mono text-xs sm:text-sm">
+										<span class="mr-1 text-xs text-(--muted)">#{index + 1}</span>
+										{clock(message.timestamp)}
+									</td>
+									<td class="font-mono text-xs sm:text-sm"
+										>{message.activity?.model.name ?? 'Unavailable'}</td
+									>
+									<td class="font-mono text-xs sm:text-sm"
+										>{message.activity?.modelRequests.length ?? 0}</td
+									>
+									<td class="text-xs sm:text-sm">
 										{#if message.activity?.modelRequests.length}
 											<button
 												type="button"
-												class="inline-flex cursor-pointer items-center gap-1 font-bold text-teal-700 hover:underline dark:text-teal-400"
+												class="inline-flex cursor-pointer items-center gap-1 font-bold text-teal-400 hover:underline"
 												onclick={(e) => openTokenBreakdown(message.id, e)}
-												title="Click to view full breakdown in conversation"
+												title="Click to view token breakdown in conversation"
 											>
-												<Zap class="h-3 w-3 text-amber-500" />
+												<Zap class="h-3.5 w-3.5 text-amber-400" />
 												<span>{number(activityTotal(message.activity))}</span>
 											</button>
 										{:else}
@@ -879,10 +1320,22 @@
 											>
 										{/if}
 									</td>
-									<td class="font-mono">{duration(message.activity?.breakdown.measuredToolMs)}</td>
-									<td class="font-mono text-(--muted)"
+									<td class="font-mono text-xs sm:text-sm"
+										>{duration(message.activity?.breakdown.measuredToolMs)}</td
+									>
+									<td class="font-mono text-xs text-(--muted) sm:text-sm"
 										>{duration(message.activity?.breakdown.otherElapsedMs)}</td
 									>
+									<td>
+										<button
+											type="button"
+											class="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-sky-400 hover:underline"
+											onclick={(e) => openTokenBreakdown(message.id, e)}
+										>
+											<span>Inspect Turn</span>
+											<ArrowUpRight class="h-3.5 w-3.5" />
+										</button>
+									</td>
 								</tr>
 							{/each}
 						</tbody>
