@@ -784,30 +784,6 @@
 										<span>{number(userTokens.count)} tokens</span>
 									</span>
 								{/if}
-								{#if isLongUserMessage(message.text)}
-									<button
-										type="button"
-										class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-semibold text-(--muted) transition-all hover:text-(--ink)"
-										onclick={(e) => {
-											e.stopPropagation();
-											toggleUserMessageExpand(message.id);
-										}}
-										title="Toggle prompt expansion"
-									>
-										<span
-											>{expandedUserMessages.has(message.id)
-												? 'Hide prompt'
-												: 'Expand prompt'}</span
-										>
-										<ChevronDown
-											class="h-3 w-3 transition-transform duration-200 {expandedUserMessages.has(
-												message.id
-											)
-												? 'rotate-180'
-												: ''}"
-										/>
-									</button>
-								{/if}
 							{/if}
 
 							{#if message.kind === 'internal_review'}
