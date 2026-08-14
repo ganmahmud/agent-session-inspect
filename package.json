@@ -1,6 +1,6 @@
 {
   "name": "@ganmahmud/agent-session-inspect",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Local, read-only inspection tool, TUI, and Web dashboard for Codex agent session logs",
   "author": "Gan Mahmud",
   "license": "MIT",
