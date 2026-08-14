@@ -37,6 +37,9 @@
 	let exportedSession = $state(false);
 	const exportedMessageIds = new SvelteSet<string>();
 
+	// Multi-select messages state
+	const selectedMessageIds = new SvelteSet<string>();
+
 	const title = (session: SessionDetail) => session.displayTitle.value ?? 'Untitled Codex session';
 	const shortId = (id: string) => id.slice(0, 8);
 	const date = (value?: string) => value?.slice(0, 10) ?? 'Unknown date';
@@ -58,13 +61,56 @@
 	const percent = (value: number, total: number) => Math.max(2, Math.round((value / total) * 100));
 
 	const filteredConversation = () => {
-		if (roleFilter === 'user')
-			return detail.conversation.filter((m) => m.role === 'user' && m.kind !== 'internal_review');
-		if (roleFilter === 'agent') return detail.conversation.filter((m) => m.role === 'assistant');
-		if (roleFilter === 'review')
-			return detail.conversation.filter((m) => m.kind === 'internal_review');
-		return detail.conversation;
+		let list = detail.conversation;
+		if (roleFilter === 'user') {
+			list = detail.conversation.filter((m) => m.role === 'user' && m.kind !== 'internal_review');
+		} else if (roleFilter === 'agent') {
+			list = detail.conversation.filter((m) => m.role === 'assistant');
+		} else if (roleFilter === 'review') {
+			list = detail.conversation.filter((m) => m.kind === 'internal_review');
+		}
+		// Sort strictly by timestamp ascending
+		return [...list].sort(
+			(a, b) => new Date(a.timestamp ?? 0).getTime() - new Date(b.timestamp ?? 0).getTime()
+		);
 	};
+
+	function toggleMessageSelect(id: string) {
+		if (selectedMessageIds.has(id)) {
+			selectedMessageIds.delete(id);
+		} else {
+			selectedMessageIds.add(id);
+		}
+	}
+
+	function selectAllMessages() {
+		for (const m of filteredConversation()) {
+			selectedMessageIds.add(m.id);
+		}
+	}
+
+	function clearMessageSelection() {
+		selectedMessageIds.clear();
+	}
+
+	function exportSelectedMessages() {
+		if (selectedMessageIds.size === 0) return;
+		const selectedEntries = detail.conversation.filter((m) => selectedMessageIds.has(m.id));
+		const payload = {
+			exportVersion: 1,
+			exportedAt: new Date().toISOString(),
+			sessionId: detail.id,
+			sessionTitle: title(detail),
+			selectedCount: selectedEntries.length,
+			messages: selectedEntries
+		};
+		const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = `selected-messages-${detail.id.slice(0, 8)}.json`;
+		a.click();
+		URL.revokeObjectURL(a.href);
+	}
 
 	function toggleActivity(id: string) {
 		if (expandedActivities.has(id)) {
@@ -195,55 +241,23 @@
 	<title>{title(detail)} — Agent Session Inspect</title>
 </svelte:head>
 
-<div class="mx-auto max-w-245 space-y-6">
+<div class="relative mx-auto max-w-245 space-y-5">
 	<!-- Session Overview Header Box -->
-	<div
-		class="rounded-xl border-[1.5px] border-(--line) bg-(--panel) p-5 shadow-(--hard-shadow) sm:p-6"
-	>
-		<div class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-			<div class="min-w-0 flex-1 space-y-2.5">
-				<!-- Header Pill Badges -->
-				<div class="flex flex-wrap items-center gap-2">
+	<div class="rounded-2xl border border-(--line) bg-(--panel) p-5 shadow-xs sm:p-6">
+		<div class="github-light-strip"></div>
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+			<!-- Header Left: Source pill + Title + Unified Meta Row -->
+			<div class="min-w-0 flex-1 space-y-2">
+				<div class="flex items-center gap-2">
 					<span
-						class="inline-flex items-center gap-1.5 rounded-full border border-(--line) bg-(--panel-subtle) px-2.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-(--muted) uppercase"
+						class="inline-flex items-center gap-1.5 rounded-md border border-(--line) bg-(--panel-subtle) px-2.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-(--muted) uppercase"
 					>
 						<Code class="h-3 w-3 text-cyan-500" />
 						{detail.displayTitle.source.replace('_', ' ')}
 					</span>
-
-					<button
-						class="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-(--line) bg-(--panel-subtle) px-2.5 py-0.5 font-mono text-[11px] text-(--muted) transition-all hover:border-(--accent) hover:bg-(--panel) hover:text-(--ink)"
-						onclick={copySessionId}
-						title="Copy session ID to clipboard"
-					>
-						{#if copiedId}
-							<Check class="h-3 w-3 text-(--success)" />
-							<span class="font-bold text-(--success)">Copied ID</span>
-						{:else}
-							<Copy class="h-3 w-3 text-(--muted)" />
-							<span>{shortId(detail.id)}</span>
-						{/if}
-					</button>
-
-					<!-- Export Session Button -->
-					<button
-						class="export-btn-primary"
-						onclick={exportSession}
-						title="Export full session as JSON file"
-					>
-						{#if exportedSession}
-							<span class="export-toast">
-								<Check class="h-3.5 w-3.5 text-emerald-400" />
-								<span class="font-bold text-emerald-400">Exported</span>
-							</span>
-						{:else}
-							<Download class="h-3.5 w-3.5" />
-							<span class="font-bold">Export Session</span>
-						{/if}
-					</button>
+					<span class="font-mono text-xs text-(--muted)">#{shortId(detail.id)}</span>
 				</div>
 
-				<!-- Session Title -->
 				<h2
 					class="line-clamp-2 text-xl leading-snug font-extrabold tracking-tight wrap-break-word text-(--ink) sm:text-2xl"
 					title={title(detail)}
@@ -251,102 +265,100 @@
 					{title(detail)}
 				</h2>
 
-				<!-- Session Meta Badges -->
-				<div class="flex flex-wrap items-center gap-2 pt-1 text-xs font-medium">
-					<span
-						class="inline-flex items-center gap-1.5 rounded-md border border-(--line)/80 bg-(--panel-subtle)/60 px-2.5 py-1 font-mono text-[11px] text-(--muted)"
-					>
+				<!-- Concise Integrated Metadata Line -->
+				<div
+					class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 font-mono text-xs text-(--muted)"
+				>
+					<span class="inline-flex items-center gap-1.5">
 						<Clock class="h-3.5 w-3.5 text-(--muted)" />
 						{date(detail.startedAt)} · {clock(detail.startedAt)}
 					</span>
-
-					<span
-						class="inline-flex items-center gap-1.5 rounded-md border border-(--line)/80 bg-(--panel-subtle)/60 px-2.5 py-1 font-mono text-[11px] text-(--muted)"
-					>
+					<span>·</span>
+					<span class="inline-flex items-center gap-1.5">
 						<MessageSquare class="h-3.5 w-3.5 text-indigo-500" />
-						{detail.conversation.length} message{detail.conversation.length === 1 ? '' : 's'}
+						{detail.conversation.length} messages
 					</span>
-
 					{#if detail.tools?.calls}
-						<span
-							class="inline-flex items-center gap-1.5 rounded-md border border-(--line)/80 bg-(--panel-subtle)/60 px-2.5 py-1 font-mono text-[11px] text-(--muted)"
-						>
+						<span>·</span>
+						<span class="inline-flex items-center gap-1.5">
 							<Terminal class="h-3.5 w-3.5 text-emerald-500" />
-							{detail.tools.calls} tool call{detail.tools.calls === 1 ? '' : 's'}
+							{detail.tools.calls} tools
 						</span>
 					{/if}
+					<span>·</span>
+					<button
+						type="button"
+						class="inline-flex cursor-pointer items-center gap-1 font-bold text-amber-600 hover:underline dark:text-amber-400"
+						onclick={() => (view = 'usage')}
+						title="Click to view full usage analytics"
+					>
+						<Zap class="h-3.5 w-3.5 text-amber-500" />
+						<span
+							>{number(
+								detail.usage.latest?.usage.totalTokens ??
+									detail.conversation.reduce((sum, m) => sum + (activityTotal(m.activity) ?? 0), 0)
+							)} tokens</span
+						>
+					</button>
 				</div>
 			</div>
 
-			<!-- Metric Card Pill (Interactive Stat Widget) -->
-			<button
-				type="button"
-				class="group relative min-w-55 cursor-pointer overflow-hidden rounded-xl border border-(--line) bg-linear-to-br from-(--panel) to-(--panel-subtle) p-3.5 text-left shadow-2xs transition-all duration-200 hover:scale-[1.01] hover:border-amber-500/50 hover:shadow-md active:scale-[0.99]"
-				onclick={() => (view = 'usage')}
-				title="Click to explore full Usage & Token Analytics"
-			>
-				<!-- Subtle background ambient glow -->
-				<div
-					class="pointer-events-none absolute -top-6 -right-6 h-20 w-20 rounded-full bg-amber-500/10 blur-xl transition-all group-hover:bg-amber-500/20"
-				></div>
-
-				<div class="flex items-center justify-between gap-3">
-					<span class="font-mono text-[10px] font-bold tracking-widest text-(--muted) uppercase">
-						Total Model Tokens
-					</span>
-					<span
-						class="flex h-6 w-6 items-center justify-center rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-500 transition-transform duration-200 group-hover:scale-110 group-hover:bg-amber-500/20"
-					>
-						<Zap class="h-3.5 w-3.5" />
-					</span>
-				</div>
-
-				<div class="mt-1 flex items-baseline justify-between gap-2">
-					<b class="font-mono text-2xl font-black tracking-tight text-(--ink) sm:text-3xl">
-						{number(detail.usage.latest?.usage.totalTokens ?? detail.conversation.reduce((sum, m) => sum + (activityTotal(m.activity) ?? 0), 0))}
-					</b>
-				</div>
-
-				<div
-					class="mt-2 flex items-center justify-between border-t border-(--line)/60 pt-2 text-[10px] font-medium text-(--muted)"
+			<!-- Header Right: Quick Actions Group -->
+			<div class="flex shrink-0 items-center gap-2 pt-1 sm:pt-0">
+				<button
+					class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--line) bg-(--panel-subtle) px-3 py-1.5 font-mono text-xs text-(--muted) transition-all hover:border-(--accent) hover:bg-(--panel) hover:text-(--ink)"
+					onclick={copySessionId}
+					title="Copy session ID to clipboard"
 				>
-					<span
-						>{(detail.usage.modelStepCount && detail.usage.modelStepCount > 0) ? detail.usage.modelStepCount : detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0)} API step{(detail.usage.modelStepCount === 1 || detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0) === 1) ? '' : 's'}</span
-					>
-					<span
-						class="inline-flex items-center gap-0.5 font-semibold text-(--ink) transition-colors group-hover:text-amber-500"
-					>
-						Analytics
-						<span class="transition-transform duration-200 group-hover:translate-x-1">→</span>
-					</span>
-				</div>
-			</button>
+					{#if copiedId}
+						<Check class="h-3.5 w-3.5 text-(--success)" />
+						<span class="font-bold text-(--success)">Copied ID</span>
+					{:else}
+						<Copy class="h-3.5 w-3.5 text-(--muted)" />
+						<span class="text-xs">Copy ID</span>
+					{/if}
+				</button>
+
+				<button
+					class="export-btn-primary"
+					onclick={exportSession}
+					title="Export full session as JSON file"
+				>
+					{#if exportedSession}
+						<span class="export-toast">
+							<Check class="h-3.5 w-3.5 text-emerald-400" />
+							<span class="font-bold text-emerald-400">Exported</span>
+						</span>
+					{:else}
+						<Download class="h-3.5 w-3.5" />
+						<span class="font-bold">Export Session</span>
+					{/if}
+				</button>
+			</div>
 		</div>
 
-		<!-- Tabs Switcher (Flush Card Bottom Tabs) -->
+		<!-- Segmented View Tabs Switcher (Underline Active State) -->
 		<div
-			class="mt-6 -mb-5 flex items-center justify-between border-t border-(--line) px-1 sm:-mb-6"
+			class="mt-5 -mb-5 flex items-center justify-between border-t border-(--line) pt-3 sm:-mb-6"
 		>
 			<div class="flex items-center gap-6">
 				<button
 					type="button"
-					class="group inline-flex cursor-pointer items-center gap-2 border-b-2 py-3 text-xs font-bold transition-all {view ===
+					class="group relative inline-flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-bold transition-all {view ===
 					'conversation'
 						? 'border-indigo-500 text-(--ink)'
-						: 'border-transparent text-(--muted) hover:text-(--ink)'}"
+						: 'border-transparent text-(--muted) hover:border-(--line) hover:text-(--ink)'}"
 					onclick={() => (view = 'conversation')}
 				>
 					<MessageSquare
-						class="h-4 w-4 transition-colors {view === 'conversation'
-							? 'text-indigo-500'
-							: 'text-(--muted) group-hover:text-(--ink)'}"
+						class="h-3.5 w-3.5 {view === 'conversation' ? 'text-indigo-400' : 'text-(--muted)'}"
 					/>
 					<span>Conversation</span>
 					<span
-						class="rounded-full px-2 py-0.5 font-mono text-[10px] font-black transition-colors {view ===
+						class="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-extrabold transition-colors {view ===
 						'conversation'
-							? 'bg-indigo-600 text-white shadow-2xs'
-							: 'border border-(--line) bg-(--field) text-(--ink) group-hover:bg-indigo-500/20 group-hover:text-indigo-900 dark:group-hover:text-indigo-200'}"
+							? 'border border-indigo-500/30 bg-indigo-500/20 text-indigo-400'
+							: 'bg-(--panel-subtle) text-(--muted)'}"
 					>
 						{detail.conversation.length}
 					</span>
@@ -354,24 +366,26 @@
 
 				<button
 					type="button"
-					class="group inline-flex cursor-pointer items-center gap-2 border-b-2 py-3 text-xs font-bold transition-all {view ===
+					class="group relative inline-flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-bold transition-all {view ===
 					'usage'
-						? 'border-amber-500 text-(--ink)'
-						: 'border-transparent text-(--muted) hover:text-(--ink)'}"
+						? 'border-amber-500 text-amber-600 dark:text-amber-300'
+						: 'border-transparent text-(--muted) hover:border-(--line) hover:text-(--ink)'}"
 					onclick={() => (view = 'usage')}
 				>
-					<BarChart3
-						class="h-4 w-4 transition-colors {view === 'usage'
-							? 'text-amber-500'
-							: 'text-(--muted) group-hover:text-(--ink)'}"
-					/>
-					<span>Usage & Token Analytics</span>
+					<BarChart3 class="h-3.5 w-3.5 {view === 'usage' ? 'text-amber-500' : 'text-(--muted)'}" />
+					<span>Usage & Analytics</span>
 				</button>
 			</div>
 
-			<div class="hidden items-center gap-2 font-mono text-xs font-bold text-(--ink) md:flex">
+			<div class="hidden items-center gap-2 pb-3 font-mono text-xs text-(--muted) md:flex">
 				<span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
-				<span>{detail.conversation.length} messages · {(detail.usage.modelStepCount && detail.usage.modelStepCount > 0) ? detail.usage.modelStepCount : detail.conversation.reduce((sum, m) => sum + (m.activity?.modelRequests?.length ?? 0), 0)} steps</span
+				<span
+					>{detail.usage.modelStepCount && detail.usage.modelStepCount > 0
+						? detail.usage.modelStepCount
+						: detail.conversation.reduce(
+								(sum, m) => sum + (m.activity?.modelRequests?.length ?? 0),
+								0
+							)} API steps</span
 				>
 			</div>
 		</div>
@@ -424,8 +438,41 @@
 				</button>
 			</div>
 
-			<!-- Accordion Actions -->
-			<div class="flex items-center gap-2">
+			<!-- Accordion & Multi-Select Actions -->
+			<div class="flex items-center gap-3">
+				{#if selectedMessageIds.size > 0}
+					<div
+						class="flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1"
+					>
+						<span class="font-mono text-[11px] font-bold text-indigo-400">
+							{selectedMessageIds.size} selected
+						</span>
+						<button
+							type="button"
+							class="rounded bg-indigo-600 px-2 py-0.5 font-bold text-white hover:bg-indigo-500"
+							onclick={exportSelectedMessages}
+						>
+							Export Selected
+						</button>
+						<button
+							type="button"
+							class="text-(--muted) hover:text-(--ink)"
+							onclick={clearMessageSelection}
+						>
+							Clear
+						</button>
+					</div>
+				{:else}
+					<button
+						type="button"
+						class="text-[11px] font-semibold text-(--muted) hover:text-(--ink)"
+						onclick={selectAllMessages}
+					>
+						Select All
+					</button>
+				{/if}
+
+				<span class="text-(--line)">|</span>
 				<button
 					class="text-[11px] font-semibold text-(--accent) hover:underline"
 					onclick={expandAllActivities}
@@ -446,14 +493,23 @@
 		<div class="conversation">
 			{#each filteredConversation() as message (message.id)}
 				<div
-					class="chat-card"
+					class="chat-card group relative"
 					class:from-user={message.role === 'user' && message.kind !== 'internal_review'}
 					class:from-agent={message.role === 'assistant'}
 					class:internal-review={message.kind === 'internal_review'}
+					class:ring-2={selectedMessageIds.has(message.id)}
+					class:ring-indigo-500={selectedMessageIds.has(message.id)}
 				>
 					<!-- Card Header -->
 					<div class="card-header">
 						<div class="flex min-w-0 items-center gap-2">
+							<input
+								type="checkbox"
+								checked={selectedMessageIds.has(message.id)}
+								onchange={() => toggleMessageSelect(message.id)}
+								class="h-4 w-4 cursor-pointer rounded border-(--line) text-indigo-600 focus:ring-indigo-500"
+								title="Select message for batch export"
+							/>
 							{#if message.kind === 'internal_review'}
 								<span class="role-badge shrink-0">
 									<ShieldCheck class="h-3.5 w-3.5" />
@@ -484,125 +540,104 @@
 							{/if}
 						</div>
 
-						<div
-							class="flex shrink-0 items-center gap-2 font-mono text-[11px] font-bold text-(--ink)"
-						>
+						<div class="flex shrink-0 items-center gap-2 font-mono text-[11px] text-(--muted)">
 							{#if message.role === 'assistant' && message.activity}
 								{@const totalTokens = activityTotal(message.activity)}
 								{#if totalTokens && totalTokens > 0}
 									<button
 										type="button"
-										class="group inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-(--line) bg-(--panel-subtle) px-2 py-0.5 font-mono text-[11px] font-medium text-(--ink) shadow-2xs transition-all hover:border-slate-800 hover:bg-slate-900 hover:text-white hover:shadow-xs active:scale-95 dark:hover:border-teal-500/60 dark:hover:bg-teal-950/80 dark:hover:text-teal-100"
+										class="group inline-flex cursor-pointer items-center gap-1 rounded-md border border-(--line) bg-(--panel-subtle) px-2 py-0.5 font-mono text-[11px] font-medium text-(--muted) transition-all hover:border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-300"
 										onclick={(e) => openTokenBreakdown(message.id, e)}
-										title="Click to expand token allocation & breakdown"
+										title="Click to view prompt breakdown"
 									>
-										<Zap
-											class="h-3 w-3 text-amber-500 transition-transform group-hover:scale-110 group-hover:text-amber-400"
+										<Zap class="h-3 w-3 text-amber-500" />
+										<b
+											class="font-bold text-(--ink) group-hover:text-amber-600 dark:group-hover:text-amber-300"
+											>{number(totalTokens)}</b
+										>
+										<span class="text-[10px] text-(--muted)">tokens</span>
+										<ChevronDown
+											class="h-3 w-3 transition-transform duration-200 {expandedActivities.has(
+												message.id
+											)
+												? 'rotate-180'
+												: ''}"
 										/>
-										<span class="hidden sm:inline"
-											>{message.activity.modelRequests.length} step{message.activity.modelRequests
-												.length === 1
-												? ''
-												: 's'} ·
-										</span>
-										<b class="text-(--ink) group-hover:text-white dark:group-hover:text-teal-200"
-											>{number(totalTokens)} tokens</b
-										>
-										<span
-											class="rounded border border-(--line) bg-(--panel) px-1.25 py-px text-[9px] font-bold tracking-wider text-(--muted) uppercase transition-colors group-hover:border-transparent group-hover:bg-teal-500/30 group-hover:text-teal-200 dark:group-hover:bg-teal-500/30 dark:group-hover:text-teal-200"
-										>
-											Breakdown
-										</span>
-										<span
-											class="inline-block transition-transform duration-200"
-											class:rotate-180={expandedActivities.has(message.id)}
-										>
-											<ChevronDown
-												class="h-3 w-3 text-(--muted) group-hover:text-white dark:group-hover:text-teal-200"
-											/>
-										</span>
 									</button>
-									<span>·</span>
 								{/if}
-							{/if}
-							<span class="font-bold text-(--ink)">{clock(message.timestamp)}</span>
-
-							{#if message.role === 'user' && message.kind !== 'internal_review'}
+							{:else if message.role === 'user' && message.kind !== 'internal_review'}
 								{@const userTokens = countTokens(message.text)}
 								{#if userTokens.count > 0}
-									<span>·</span>
 									<span
-										class="inline-flex items-center gap-1.5 rounded-md border border-(--line) bg-(--panel-subtle) px-2 py-0.5 font-mono text-[11px] font-medium text-(--ink) shadow-2xs"
+										class="inline-flex items-center gap-1 rounded-md border border-(--line) bg-(--panel-subtle) px-2 py-0.5 font-mono text-[11px] text-(--muted)"
 										title="Token count calculated using {userTokens.method}"
 									>
-										<Zap class="h-3 w-3 text-blue-600 dark:text-blue-400" />
-										<b class="text-(--ink)">{number(userTokens.count)} tokens</b>
-										<span
-											class="hidden rounded bg-(--panel) px-1 py-px text-[9px] font-bold tracking-wider text-(--muted) uppercase lg:inline"
-										>
-											{userTokens.method.split(' ')[0]}
-										</span>
+										<Zap class="h-3 w-3 text-blue-500" />
+										<span>{number(userTokens.count)} tokens</span>
 									</span>
 								{/if}
 							{/if}
 
 							{#if message.kind === 'internal_review'}
-								<span>·</span>
 								<button
 									type="button"
-									class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-bold tracking-wider text-(--ink) uppercase transition-all hover:bg-(--field)"
+									class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-bold text-(--ink) uppercase transition-all hover:bg-(--field)"
 									onclick={(e) => {
 										e.stopPropagation();
 										toggleReview(message.id);
 									}}
 								>
 									<span>{expandedReviews.has(message.id) ? 'Hide review' : 'Show review'}</span>
-									<span
-										class="inline-block transition-transform duration-200"
-										class:rotate-180={expandedReviews.has(message.id)}
-									>
-										<ChevronDown class="h-3 w-3" />
-									</span>
+									<ChevronDown
+										class="h-3 w-3 transition-transform duration-200 {expandedReviews.has(
+											message.id
+										)
+											? 'rotate-180'
+											: ''}"
+									/>
 								</button>
 							{/if}
 
-							<!-- Icon-only plain text copy button -->
-							<button
-								type="button"
-								class="ml-0.5 inline-flex items-center justify-center rounded border border-transparent p-1 text-(--muted) transition-colors hover:border-(--line) hover:bg-(--panel-subtle) hover:text-(--ink)"
-								onclick={(e) => {
-									e.stopPropagation();
-									copyMessageText(message.id, message.text);
-								}}
-								title="Copy plain text to clipboard"
-								aria-label="Copy plain text"
-							>
-								{#if copiedMessageIds.has(message.id)}
-									<Check class="h-3.5 w-3.5 text-(--success)" />
-								{:else}
-									<Copy class="h-3.5 w-3.5" />
-								{/if}
-							</button>
+							<span class="font-medium text-(--muted)">{clock(message.timestamp)}</span>
 
-							<!-- Export single message button -->
-							<button
-								type="button"
-								class="inline-flex cursor-pointer items-center gap-1 rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 text-[10px] font-bold text-(--muted) transition-colors hover:border-(--accent) hover:bg-(--panel) hover:text-(--ink)"
-								onclick={(e) => {
-									e.stopPropagation();
-									exportMessage(message);
-								}}
-								title="Export this message as JSON"
-								aria-label="Export message"
+							<!-- Action Icon Group (Copy & Export) -->
+							<div
+								class="flex items-center gap-1 border-l border-(--line) pl-1.5 opacity-80 transition-opacity hover:opacity-100"
 							>
-								{#if exportedMessageIds.has(message.id)}
-									<Check class="h-3 w-3 text-(--success)" />
-									<span class="text-(--success)">Exported</span>
-								{:else}
-									<Download class="h-3 w-3" />
-									<span>Export</span>
-								{/if}
-							</button>
+								<button
+									type="button"
+									class="inline-flex items-center justify-center rounded p-1 text-(--muted) transition-colors hover:bg-(--panel-subtle) hover:text-(--ink)"
+									onclick={(e) => {
+										e.stopPropagation();
+										copyMessageText(message.id, message.text);
+									}}
+									title="Copy message text"
+									aria-label="Copy plain text"
+								>
+									{#if copiedMessageIds.has(message.id)}
+										<Check class="h-3.5 w-3.5 text-(--success)" />
+									{:else}
+										<Copy class="h-3.5 w-3.5" />
+									{/if}
+								</button>
+
+								<button
+									type="button"
+									class="inline-flex items-center justify-center rounded p-1 text-(--muted) transition-colors hover:bg-(--panel-subtle) hover:text-(--ink)"
+									onclick={(e) => {
+										e.stopPropagation();
+										exportMessage(message);
+									}}
+									title="Export message JSON"
+									aria-label="Export message"
+								>
+									{#if exportedMessageIds.has(message.id)}
+										<Check class="h-3.5 w-3.5 text-(--success)" />
+									{:else}
+										<Download class="h-3.5 w-3.5" />
+									{/if}
+								</button>
+							</div>
 						</div>
 					</div>
 
@@ -668,56 +703,12 @@
 												</p>
 											{/if}
 
-											<!-- Token Breakdown Visualizer -->
+											<!-- Token Breakdown Visualizer & Tool Inspector -->
 											{#if message.activity.modelRequests.length}
 												<TokenBreakdownVisualizer
 													activity={message.activity}
 													highlighted={highlightedTokenMessageId === message.id}
 												/>
-											{/if}
-
-											<!-- Tool Executions Accordions -->
-											{#if message.activity.tools.length}
-												<div class="space-y-2">
-													<span
-														class="text-[10px] font-bold tracking-wider text-(--muted) uppercase"
-														>Tools Invoked</span
-													>
-													{#each message.activity.tools as tool (tool.id)}
-														<details class="tool-item">
-															<summary>
-																<div class="flex items-center gap-2">
-																	<Code class="h-3.5 w-3.5 text-(--accent)" />
-																	<b class="font-mono text-xs">{tool.name}</b>
-																	<span
-																		class="rounded border border-(--line) bg-(--panel) px-1.5 py-0.5 font-mono text-[10px] text-(--muted)"
-																	>
-																		{tool.status ?? 'recorded'}
-																	</span>
-																</div>
-																<span class="font-mono text-[11px] text-(--muted)"
-																	>{duration(tool.durationMs)}</span
-																>
-															</summary>
-															{#if tool.input}
-																<div class="px-3 pt-2">
-																	<span class="text-[10px] font-semibold text-(--muted) uppercase"
-																		>Input</span
-																	>
-																	<pre>{tool.input}</pre>
-																</div>
-															{/if}
-															{#if tool.output}
-																<div class="px-3 pt-2 pb-2">
-																	<span class="text-[10px] font-semibold text-(--muted) uppercase"
-																		>Output</span
-																	>
-																	<pre>{tool.output}</pre>
-																</div>
-															{/if}
-														</details>
-													{/each}
-												</div>
 											{/if}
 
 											<!-- File Edits Diffs -->

@@ -43,7 +43,12 @@ export async function POST({ request }) {
 
 	// Full session import
 	if (envelope.session && envelope.session.id && Array.isArray(envelope.session.conversation)) {
-		const inventory = importSession(envelope.session);
+		const session = { ...envelope.session };
+		// Sort conversation messages by timestamp ascending
+		session.conversation = [...session.conversation].sort(
+			(a, b) => new Date(a.timestamp ?? 0).getTime() - new Date(b.timestamp ?? 0).getTime()
+		);
+		const inventory = importSession(session);
 		const title = inventory.displayTitle?.value ?? 'Untitled session';
 		return json({ id: inventory.id, title });
 	}

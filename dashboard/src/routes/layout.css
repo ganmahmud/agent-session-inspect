@@ -1,74 +1,6 @@
 @import 'tailwindcss';
 
 :root {
-	/* Slate & Zinc - High-End Modern Light Palette */
-	--canvas: #f8fafc;
-	--panel: #ffffff;
-	--panel-subtle: #f1f5f9;
-	--field: #f8fafc;
-	--line: #e2e8f0;
-	--line-subtle: #f1f5f9;
-	--ink: #0f172a;
-	--muted: #64748b;
-	--accent: #2563eb;
-	--accent-secondary: #0284c7;
-	--accent-soft: rgba(37, 99, 235, 0.08);
-	--accent-glow: rgba(37, 99, 235, 0.15);
-	--pill-active-bg: #0f172a;
-	--pill-active-text: #ffffff;
-	--danger: #ef4444;
-	--danger-soft: #fef2f2;
-	--success: #10b981;
-	--success-soft: #ecfdf5;
-	
-	--hard-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
-	--hard-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-	--hard-shadow-lg: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
-	--user-shadow: 0 1px 3px rgba(37, 99, 235, 0.06);
-	--agent-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
-	--review-shadow: 0 1px 3px rgba(217, 119, 6, 0.06);
-
-	/* Muted Role Distinction Tokens - Light Mode */
-	--user-bg: #eff6ff;
-	--user-border: #3b82f6;
-	--user-badge-bg: #2563eb;
-	--user-badge-text: #ffffff;
-	--user-glow: rgba(37, 99, 235, 0.08);
-
-	--agent-bg: #ffffff;
-	--agent-border: #cbd5e1;
-	--agent-badge-bg: #475569;
-	--agent-badge-text: #ffffff;
-	--agent-glow: rgba(71, 85, 105, 0.08);
-
-	--review-bg: #fffbeb;
-	--review-border: #f59e0b;
-	--review-badge-bg: #d97706;
-	--review-badge-text: #ffffff;
-
-	/* Token Allocation Category Tokens - Modern Light Mode */
-	--token-cached: #0d9488;
-	--token-cached-bg: #ccfbf1;
-	--token-cached-border: #5eead4;
-	--token-cached-text: #0f766e;
-
-	--token-input: #2563eb;
-	--token-input-bg: #dbeafe;
-	--token-input-border: #93c5fd;
-	--token-input-text: #1d4ed8;
-
-	--token-output: #ea580c;
-	--token-output-bg: #ffedd5;
-	--token-output-border: #fdba74;
-	--token-output-text: #c2410c;
-
-	--token-reasoning: #7c3aed;
-	--token-reasoning-bg: #f3e8ff;
-	--token-reasoning-border: #c084fc;
-	--token-reasoning-text: #6b21a8;
-}
-
-:root[data-theme='dark'] {
 	/* Obsidian Slate & Charcoal - High Contrast Dark Palette */
 	--canvas: #0f1115;
 	--panel: #161920;
@@ -803,3 +735,141 @@ tr:hover td {
 @keyframes import-spin {
 	to { transform: rotate(360deg); }
 }
+
+/* ==========================================================================
+   GitHub Homepage Ambient Fixed Backlight System
+   ========================================================================== */
+
+/* Fixed Ambient Backlight Mesh Flares */
+.github-backlight-fixed {
+	position: fixed;
+	top: 0;
+	left: 50%;
+	transform: translate3d(-50%, 0, 0);
+	width: 100vw;
+	max-width: 1400px;
+	height: 650px;
+	pointer-events: none;
+	z-index: 0;
+	isolation: isolate;
+	opacity: 1;
+	transition: opacity 0.3s ease;
+}
+
+.github-backlight-fixed::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: 
+		/* Upper violet ambient backlight flare */
+		radial-gradient(
+			circle at 30% 20%,
+			rgba(137, 87, 229, 0.22),
+			transparent 50%
+		),
+		/* Upper cyan ambient backlight flare */
+		radial-gradient(
+			circle at 70% 18%,
+			rgba(56, 189, 248, 0.18),
+			transparent 50%
+		),
+		/* Deep indigo center glow */
+		radial-gradient(
+			circle at 50% 35%,
+			rgba(99, 102, 241, 0.16),
+			transparent 60%
+		),
+		/* Emerald bottom accent flare */
+		radial-gradient(
+			circle at 50% 80%,
+			rgba(34, 197, 94, 0.12),
+			transparent 55%
+		);
+	filter: blur(70px);
+}
+
+/* Fixed Tech Dot Grid Backdrop (GitHub Developer Grid) */
+.github-grid-backdrop-fixed {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 650px;
+	background-image: radial-gradient(
+		rgba(255, 255, 255, 0.12) 1.2px,
+		transparent 1.2px
+	);
+	background-size: 24px 24px;
+	mask-image: radial-gradient(
+		ellipse 85% 60% at 50% 0%,
+		#000 65%,
+		transparent 100%
+	);
+	-webkit-mask-image: radial-gradient(
+		ellipse 85% 60% at 50% 0%,
+		#000 65%,
+		transparent 100%
+	);
+	pointer-events: none;
+	z-index: 0;
+	opacity: 0.55;
+	transition: opacity 0.3s ease;
+}
+
+/* Light mode adjustments for backlight flares */
+:root:not(.dark) .github-backlight-fixed::before {
+	background: 
+		radial-gradient(
+			circle at 30% 20%,
+			rgba(137, 87, 229, 0.14),
+			transparent 50%
+		),
+		radial-gradient(
+			circle at 70% 18%,
+			rgba(56, 189, 248, 0.12),
+			transparent 50%
+		),
+		radial-gradient(
+			circle at 50% 35%,
+			rgba(168, 85, 247, 0.1),
+			transparent 60%
+		);
+	filter: blur(80px);
+}
+:root:not(.dark) .github-grid-backdrop-fixed {
+	background-image: radial-gradient(
+		rgba(15, 23, 42, 0.09) 1.2px,
+		transparent 1.2px
+	);
+	opacity: 0.75;
+}
+
+/* GitHub Hero Header Top Light Strip Accent */
+.github-light-strip {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 2px;
+	background: linear-gradient(
+		90deg,
+		rgba(56, 189, 248, 0) 0%,
+		rgba(56, 189, 248, 0.85) 18%,
+		rgba(139, 92, 246, 1) 50%,
+		rgba(236, 72, 153, 0.85) 82%,
+		rgba(236, 72, 153, 0) 100%
+	);
+	opacity: 0.95;
+	z-index: 4;
+}
+
+/* Disable Ambient Background Backlight & Grid when data-backlight="false" */
+html[data-backlight="false"] .github-backlight-fixed,
+html[data-backlight="false"] .github-grid-backdrop-fixed {
+	opacity: 0 !important;
+	pointer-events: none !important;
+}
+
+
+
+

@@ -1,15 +1,14 @@
 <script lang="ts">
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { onMount, type Snippet } from 'svelte';
-	import { page, navigating } from '$app/stores';
+	import type { Snippet } from 'svelte';
+	import { page, navigating } from '$app/state';
 	import { resolveRoute } from '$app/paths';
 	import SessionSkeleton from '$lib/components/SessionSkeleton.svelte';
+	import ImportModal from '$lib/components/ImportModal.svelte';
 	import {
 		Activity,
 		Layers,
-		Sun,
-		Moon,
 		Search,
 		X,
 		Clock,
@@ -24,11 +23,18 @@
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 
 	let query = $state('');
-	let theme = $state<'light' | 'dark'>('dark');
 	let sessionFilter = $state<'all' | 'recent' | 'heavy' | 'imported'>('all');
 	let importLoading = $state(false);
 	let importError = $state<string | null>(null);
+	let isImportModalOpen = $state(false);
 	let fileInput: HTMLInputElement;
+
+	// Local backlight flag (enabled by default)
+	let isBacklightEnabled = $state(true);
+
+	function openImportModal() {
+		isImportModalOpen = true;
+	}
 
 	// Track which sessions were imported
 	const importedIds = $derived(new Set(data.importedSessionIds ?? []));
@@ -67,16 +73,7 @@
 		);
 	};
 
-	function setTheme(next: 'light' | 'dark') {
-		theme = next;
-		document.documentElement.dataset.theme = next;
-		localStorage.setItem('agent-session-inspect-theme', next);
-	}
 
-	onMount(() => {
-		const stored = localStorage.getItem('agent-session-inspect-theme');
-		setTheme(stored === 'light' ? 'light' : 'dark');
-	});
 
 	let isDragging = $state(false);
 
@@ -175,6 +172,8 @@
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
+<ImportModal bind:isOpen={isImportModalOpen} />
+
 <div
 	class="relative min-h-screen bg-(--canvas) text-(--ink)"
 	ondragover={handleDragOver}
@@ -183,6 +182,11 @@
 	role="region"
 	aria-label="Workspace Dropzone"
 >
+	<!-- Fixed Ambient Backlight & Tech Grid Backdrop -->
+	{#if isBacklightEnabled}
+		<div class="github-backlight-fixed"></div>
+		<div class="github-grid-backdrop-fixed"></div>
+	{/if}
 	{#if isDragging}
 		<div
 			class="animate-in fade-in pointer-events-none fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-950/80 p-6 text-white backdrop-blur-md transition-all duration-200"
@@ -237,26 +241,35 @@
 					<span class="hidden text-xs font-semibold text-(--muted) sm:inline"
 						>Workspace Inspector</span
 					>
-					{#if $page.data.detail}
+					{#if page.data.detail}
 						<span class="hidden text-(--line) sm:inline">|</span>
 						<span
 							class="max-w-75 truncate font-mono text-xs font-medium text-(--ink)"
-							title={title($page.data.detail)}
+							title={title(page.data.detail)}
 						>
-							{title($page.data.detail)}
+							{title(page.data.detail)}
 						</span>
 					{/if}
 				</div>
 
 				<div class="flex items-center gap-3">
+					<a
+						href={resolveRoute('/import')}
+						class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-bold text-indigo-400 no-underline transition-colors hover:bg-indigo-500 hover:text-white"
+						title="Open Import Hub & Studio"
+					>
+						<Upload class="h-3.5 w-3.5" />
+						<span>Import Hub</span>
+					</a>
+
 					<button
 						type="button"
 						class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--line) bg-(--panel-subtle) px-3 py-1 text-xs font-semibold text-(--ink) transition-colors hover:border-(--accent) hover:bg-(--panel)"
-						onclick={() => fileInput?.click()}
-						title="Import full session or single message JSON"
+						onclick={openImportModal}
+						title="Quick import session JSON"
 					>
 						<Upload class="h-3.5 w-3.5 text-(--accent)" />
-						<span class="text-xs">Import</span>
+						<span class="text-xs">Quick Import</span>
 					</button>
 
 					<div
@@ -265,19 +278,6 @@
 						<Layers class="h-3.5 w-3.5 text-(--accent)" />
 						<span>{data.inventory.sessions.length} sessions</span>
 					</div>
-
-					<button
-						class="theme-toggle"
-						onclick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-						title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-						aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-					>
-						{#if theme === 'dark'}
-							<Sun class="h-4 w-4 text-amber-400" />
-						{:else}
-							<Moon class="h-4 w-4 text-indigo-600" />
-						{/if}
-					</button>
 				</div>
 			</div>
 		</div>
@@ -297,7 +297,7 @@
 					<span>SESSIONS ({regularSessions().length + importedSessionsList().length})</span>
 					<span
 						class="rounded border border-(--line) bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase"
-						>⌘K / Filter</span
+						>Search / Filter</span
 					>
 				</div>
 				<div class="search-wrapper">
@@ -312,43 +312,58 @@
 						</button>
 					{/if}
 				</div>
-				<!-- Filter Tags -->
-				<div class="flex flex-wrap items-center gap-1 text-xs">
+				<!-- Clear Segmented Sidebar Filter Control -->
+				<div class="grid grid-cols-4 gap-1 rounded-lg border border-(--line) bg-(--field) p-1 text-xs">
 					<button
-						class="rounded px-2 py-0.5 text-[11px] font-semibold transition-colors {sessionFilter ===
+						type="button"
+						class="flex cursor-pointer items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-bold transition-all {sessionFilter ===
 						'all'
-							? 'bg-(--pill-active-bg) text-(--pill-active-text)'
-							: 'bg-(--panel-subtle) text-(--muted) hover:text-(--ink)'}"
+							? 'bg-indigo-600 text-white shadow-xs'
+							: 'text-(--muted) hover:bg-(--panel-subtle) hover:text-(--ink)'}"
 						onclick={() => (sessionFilter = 'all')}
+						title="Show all sessions"
 					>
-						All
+						<Layers class="h-3 w-3" />
+						<span>All</span>
 					</button>
+
 					<button
-						class="rounded px-2 py-0.5 text-[11px] font-semibold transition-colors {sessionFilter ===
+						type="button"
+						class="flex cursor-pointer items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-bold transition-all {sessionFilter ===
 						'recent'
-							? 'bg-(--pill-active-bg) text-(--pill-active-text)'
-							: 'bg-(--panel-subtle) text-(--muted) hover:text-(--ink)'}"
+							? 'bg-blue-600 text-white shadow-xs'
+							: 'text-(--muted) hover:bg-(--panel-subtle) hover:text-(--ink)'}"
 						onclick={() => (sessionFilter = 'recent')}
+						title="Sort by most recent start date"
 					>
-						Recent
+						<Clock class="h-3 w-3" />
+						<span>Recent</span>
 					</button>
+
 					<button
-						class="rounded px-2 py-0.5 text-[11px] font-semibold transition-colors {sessionFilter ===
+						type="button"
+						class="flex cursor-pointer items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-bold transition-all {sessionFilter ===
 						'heavy'
-							? 'bg-(--pill-active-bg) text-(--pill-active-text)'
-							: 'bg-(--panel-subtle) text-(--muted) hover:text-(--ink)'}"
+							? 'bg-amber-600 text-white shadow-xs'
+							: 'text-(--muted) hover:bg-(--panel-subtle) hover:text-(--ink)'}"
 						onclick={() => (sessionFilter = 'heavy')}
+						title="Sort by highest token usage"
 					>
-						High Tokens
+						<Zap class="h-3 w-3" />
+						<span>Heavy</span>
 					</button>
+
 					<button
-						class="rounded px-2 py-0.5 text-[11px] font-semibold transition-colors {sessionFilter ===
+						type="button"
+						class="flex cursor-pointer items-center justify-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-bold transition-all {sessionFilter ===
 						'imported'
-							? 'bg-indigo-600 text-white'
-							: 'bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20'}"
+							? 'bg-purple-600 text-white shadow-xs'
+							: 'text-(--muted) hover:bg-(--panel-subtle) hover:text-(--ink)'}"
 						onclick={() => (sessionFilter = 'imported')}
+						title="Show imported session files ({importedIds.size})"
 					>
-						Imported ({importedIds.size})
+						<Upload class="h-3 w-3" />
+						<span>Import</span>
 					</button>
 				</div>
 			</div>
@@ -375,7 +390,7 @@
 									href={resolveRoute('/session/[id]', { id: session.id })}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
-									class:active={$page.params.id === session.id}
+									class:active={page.params.id === session.id}
 									class="session-row group relative block border-l-2 border-l-indigo-500 bg-indigo-500/5 no-underline hover:bg-indigo-500/15"
 								>
 									<div class="flex items-start justify-between gap-2">
@@ -430,7 +445,7 @@
 							href={resolveRoute('/session/[id]', { id: session.id })}
 							data-sveltekit-preload-code="viewport"
 							data-sveltekit-preload-data="hover"
-							class:active={$page.params.id === session.id}
+							class:active={page.params.id === session.id}
 							class="session-row group relative block no-underline"
 						>
 							<div class="flex items-start justify-between gap-2">
@@ -500,7 +515,7 @@
 
 		<!-- Right Content Pane -->
 		<section class="min-w-0 px-4 py-6 sm:px-7 lg:px-10">
-			{#if $navigating}
+			{#if navigating.to}
 				<SessionSkeleton />
 			{:else}
 				{@render children()}
