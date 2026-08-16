@@ -92,7 +92,7 @@ export interface CatalogTitle {
 export interface ToolCallDetail {
   id: string;
   name: string;
-  kind: 'function' | 'custom' | 'exec' | 'mcp' | 'patch' | 'unknown';
+  kind: 'function' | 'custom' | 'exec' | 'mcp' | 'patch' | 'subagent' | 'unknown';
   startedAt?: string;
   completedAt?: string;
   durationMs?: number;

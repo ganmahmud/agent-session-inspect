@@ -102,6 +102,7 @@ function newActivity(startedAt?: string, model: ModelConfiguration = { source: '
 function toolKind(name: string, fallback: ToolCallDetail['kind']): ToolCallDetail['kind'] {
   if (name === 'exec' || name === 'exec_command') return 'exec';
   if (name === 'apply_patch') return 'patch';
+  if (name.toLowerCase().includes('subagent') || name.startsWith('agent:') || name.startsWith('sub_agent') || name === 'delegate_task' || name === 'spawn_agent') return 'subagent';
   return fallback;
 }
 
@@ -360,6 +361,22 @@ export async function readCodexSessionDetail(session: SessionInventory): Promise
         });
         tool.durationMs ??= timestampDelta(tool.startedAt, tool.completedAt);
         pending.edits.push({ id, timestamp, status: text(payload.status), files: editFiles(payload.changes), source: provenance });
+      }
+
+      if (type === 'event_msg' && eventType === 'sub_agent_activity') {
+        const subagentId = text(payload.agent_thread_id) ?? text(payload.call_id) ?? `${file}:${line}`;
+        const name = text(payload.name) ?? (subagentId ? `subagent:${subagentId.slice(0, 8)}` : 'subagent');
+        const tool = toolFor(pending, toolIndex, subagentId, {
+          name,
+          kind: 'subagent',
+          input: compactJson(payload.input ?? payload.prompt ?? { agent_thread_id: subagentId }),
+          output: compactJson(payload.output ?? payload.result ?? payload.summary),
+          status: text(payload.status) ?? 'completed',
+          completedAt: timestamp,
+          durationMs: durationMs(payload.duration) ?? number(payload.duration_ms),
+          source: provenance,
+        });
+        tool.durationMs ??= timestampDelta(tool.startedAt, tool.completedAt);
       }
 
       if (type === 'event_msg' && (eventType === 'task_complete' || eventType === 'turn_aborted')) {

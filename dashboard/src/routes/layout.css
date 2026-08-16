@@ -66,6 +66,13 @@
 	--token-reasoning-bg: rgba(192, 132, 252, 0.12);
 	--token-reasoning-border: rgba(192, 132, 252, 0.25);
 	--token-reasoning-text: #e9d5ff;
+
+	/* Subagent Design Tokens */
+	--subagent: #c084fc;
+	--subagent-bg: rgba(192, 132, 252, 0.14);
+	--subagent-border: rgba(192, 132, 252, 0.35);
+	--subagent-text: #e9d5ff;
+	--subagent-glow: rgba(192, 132, 252, 0.2);
 }
 
 html {
@@ -601,6 +608,16 @@ button, input {
 /* Diff formatting */
 .diff-added { color: var(--success); }
 .diff-removed { color: var(--danger); }
+.diff-badge-added {
+	background: rgba(74, 222, 128, 0.15);
+	color: #4ade80;
+	border: 1px solid rgba(74, 222, 128, 0.3);
+}
+.diff-badge-removed {
+	background: rgba(248, 113, 113, 0.15);
+	color: #f87171;
+	border: 1px solid rgba(248, 113, 113, 0.3);
+}
 
 /* Usage Analytics cards */
 .usage-cards-grid {
@@ -654,9 +671,6 @@ table {
 th, td {
 	padding: 9px 12px;
 	border-bottom: 1px solid var(--line);
-	text-align: right;
-}
-th:first-child, td:first-child {
 	text-align: left;
 }
 th {
@@ -829,6 +843,23 @@ tr:hover td {
 	font-weight: 700;
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
+}
+
+.subagent-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 5px;
+	border-radius: 4px;
+	border: 1px solid var(--subagent-border);
+	background: var(--subagent-bg);
+	color: var(--subagent-text);
+	font-size: 10px;
+	font-family: var(--font-mono, monospace);
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	line-height: 1.35;
+	box-shadow: 0 0 6px var(--subagent-glow);
 }
 
 /* Import error banner */
@@ -1033,6 +1064,277 @@ html[data-backlight="false"] .github-grid-backdrop-fixed {
 	opacity: 0 !important;
 	pointer-events: none !important;
 }
+
+/* ==========================================================================
+   Syntax Highlighting Tokens for Diff Viewers & Code Blocks
+   ========================================================================== */
+
+.syn-kwd {
+	color: #c084fc;
+	font-weight: 600;
+}
+.syn-str {
+	color: #34d399;
+}
+.syn-num {
+	color: #fb923c;
+}
+.syn-lit {
+	color: #f472b6;
+	font-weight: 600;
+}
+.syn-typ {
+	color: #38bdf8;
+}
+.syn-fn {
+	color: #facc15;
+}
+.syn-cmt {
+	color: #94a3b8;
+	font-style: italic;
+	opacity: 0.8;
+}
+.syn-op {
+	color: #f43f5e;
+}
+.syn-tag {
+	color: #f87171;
+	font-weight: 600;
+}
+.syn-attr {
+	color: #a78bfa;
+}
+.syn-prop {
+	color: #60a5fa;
+}
+.syn-var {
+	color: #2dd4bf;
+}
+.syn-block {
+	color: #ec4899;
+	font-weight: 600;
+}
+.syn-expr {
+	color: #e2e8f0;
+}
+
+/* Light Theme Syntax Adjustments */
+html[data-theme="light"] .syn-kwd {
+	color: #9333ea;
+}
+html[data-theme="light"] .syn-str {
+	color: #059669;
+}
+html[data-theme="light"] .syn-num {
+	color: #d97706;
+}
+html[data-theme="light"] .syn-lit {
+	color: #db2777;
+}
+html[data-theme="light"] .syn-typ {
+	color: #0284c7;
+}
+html[data-theme="light"] .syn-fn {
+	color: #b45309;
+}
+html[data-theme="light"] .syn-cmt {
+	color: #64748b;
+}
+html[data-theme="light"] .syn-op {
+	color: #e11d48;
+}
+html[data-theme="light"] .syn-tag {
+	color: #dc2626;
+}
+html[data-theme="light"] .syn-attr {
+	color: #7c3aed;
+}
+html[data-theme="light"] .syn-prop {
+	color: #2563eb;
+}
+/* ==========================================================================
+   Global Rich Diff Viewer Styling (GitHub / VS Code Theme)
+   ========================================================================== */
+
+.diff-hunk {
+	border-bottom: 1px solid var(--line-subtle);
+}
+.diff-hunk:last-child {
+	border-bottom: none;
+}
+
+.diff-hunk-header {
+	padding: 4px 12px;
+	background: rgba(99, 102, 241, 0.14) !important;
+	color: #a5b4fc !important;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 11px;
+	font-weight: 700;
+	border-top: 1px solid rgba(99, 102, 241, 0.25);
+	border-bottom: 1px solid rgba(99, 102, 241, 0.25);
+	user-select: none;
+}
+
+.diff-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.diff-table td {
+	border-bottom: none !important;
+	padding: 0;
+	background: transparent;
+}
+
+.diff-row {
+	border: none;
+	transition: background-color 0.12s ease;
+}
+
+.diff-row:hover {
+	filter: brightness(1.1);
+}
+
+/* Additions (Vibrant Green Tint & High-Contrast Marker) */
+.diff-row.diff-row-add,
+tr.diff-row-add {
+	background: rgba(34, 197, 94, 0.18) !important;
+	color: #4ade80 !important;
+}
+
+.diff-row.diff-row-add .diff-gutter-num,
+tr.diff-row-add .diff-gutter-num {
+	color: #4ade80 !important;
+	opacity: 0.85;
+	background: rgba(34, 197, 94, 0.12) !important;
+}
+
+.diff-row.diff-row-add .diff-gutter-marker,
+tr.diff-row-add .diff-gutter-marker {
+	color: #22c55e !important;
+	font-weight: 900;
+	background: rgba(34, 197, 94, 0.15) !important;
+}
+
+.diff-row.diff-row-add .diff-line-content pre,
+tr.diff-row-add .diff-line-content pre {
+	color: #86efac !important;
+}
+
+/* Deletions (Vibrant Red Tint & High-Contrast Marker) */
+.diff-row.diff-row-del,
+tr.diff-row-del {
+	background: rgba(239, 68, 68, 0.2) !important;
+	color: #f87171 !important;
+}
+
+.diff-row.diff-row-del .diff-gutter-num,
+tr.diff-row-del .diff-gutter-num {
+	color: #f87171 !important;
+	opacity: 0.85;
+	background: rgba(239, 68, 68, 0.12) !important;
+}
+
+.diff-row.diff-row-del .diff-gutter-marker,
+tr.diff-row-del .diff-gutter-marker {
+	color: #ef4444 !important;
+	font-weight: 900;
+	background: rgba(239, 68, 68, 0.15) !important;
+}
+
+.diff-row.diff-row-del .diff-line-content pre,
+tr.diff-row-del .diff-line-content pre {
+	color: #fca5a5 !important;
+}
+
+/* Context / Unchanged Lines */
+.diff-row.diff-row-context,
+tr.diff-row-context {
+	background: transparent;
+	color: var(--ink);
+}
+
+.diff-row.diff-row-meta,
+tr.diff-row-meta {
+	background: var(--field);
+	color: var(--muted);
+	font-style: italic;
+}
+
+.diff-gutter-num {
+	width: 42px;
+	min-width: 42px;
+	max-width: 42px;
+	padding: 1px 6px !important;
+	text-align: right !important;
+	font-size: 11px;
+	color: var(--muted);
+	opacity: 0.55;
+	border-right: 1px solid var(--line-subtle);
+	user-select: none;
+	vertical-align: top;
+	white-space: nowrap;
+}
+
+.diff-gutter-marker {
+	width: 20px;
+	min-width: 20px;
+	max-width: 20px;
+	text-align: center !important;
+	padding: 1px 0 !important;
+	font-weight: bold;
+	user-select: none;
+	vertical-align: top;
+	white-space: nowrap;
+}
+
+.diff-line-content {
+	padding: 1px 12px !important;
+	width: 100%;
+	text-align: left !important;
+	vertical-align: top;
+	overflow-x: auto;
+}
+
+.diff-line-content pre {
+	margin: 0 !important;
+	padding: 0 !important;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+	font-size: 12px !important;
+	line-height: 1.5 !important;
+	text-align: left !important;
+	white-space: pre-wrap !important;
+	word-break: break-all;
+	tab-size: 2;
+}
+
+/* Light Mode specific diff contrast */
+html[data-theme="light"] .diff-row.diff-row-add,
+html[data-theme="light"] tr.diff-row-add {
+	background: rgba(34, 197, 94, 0.2) !important;
+	color: #15803d !important;
+}
+html[data-theme="light"] .diff-row.diff-row-add .diff-line-content pre,
+html[data-theme="light"] tr.diff-row-add .diff-line-content pre {
+	color: #166534 !important;
+}
+html[data-theme="light"] .diff-row.diff-row-del,
+html[data-theme="light"] tr.diff-row-del {
+	background: rgba(239, 68, 68, 0.2) !important;
+	color: #b91c1c !important;
+}
+html[data-theme="light"] .diff-row.diff-row-del .diff-line-content pre,
+html[data-theme="light"] tr.diff-row-del .diff-line-content pre {
+	color: #991b1b !important;
+}
+
+
 
 
 

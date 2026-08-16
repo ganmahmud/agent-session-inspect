@@ -29,29 +29,122 @@
 		Flame,
 		Wrench,
 		FileCode,
-		Server
+		Server,
+		GitCommit,
+		Bot
 	} from '@lucide/svelte';
 	import TokenBreakdownVisualizer from '$lib/components/TokenBreakdownVisualizer.svelte';
+	import FileDiffViewer from '$lib/components/FileDiffViewer.svelte';
+	import SubagentTelemetry from '$lib/components/SubagentTelemetry.svelte';
+	import { extractSessionFileChanges, parseUnifiedDiff, type ParsedDiff } from '$lib/diff-parser';
+	import { highlight } from '$lib/syntax-highlighter';
 	import type {
 		ConversationEntry,
 		ReplyActivity,
-		SessionDetail
+		SessionDetail,
+		ToolCallDetail
 	} from '../../../../../src/types.ts';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 	let detail = $derived(data.detail);
+	let subagents = $derived(
+		(data as unknown as { subagents?: SessionDetail[] }).subagents ?? []
+	);
 
-	let view = $state<'conversation' | 'usage'>('conversation');
+	function formatToolPayload(value: unknown, limit = 25_000): string {
+		if (value === undefined || value === null) return '';
+		const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+		if (str.length > limit) {
+			return str.slice(0, limit) + `\n\n... [Truncated ${str.length - limit} characters for browser performance]`;
+		}
+		return str;
+	}
+
+	let view = $state<'conversation' | 'usage' | 'changes' | 'subagents'>('conversation');
 	let roleFilter = $state<'all' | 'user' | 'agent' | 'review'>('all');
+	let fileChanges = $derived(extractSessionFileChanges(detail));
+	let selectedDiffPath = $state<string | undefined>(undefined);
 	const expandedActivities = new SvelteSet<string>();
 	const expandedReviews = new SvelteSet<string>();
 	const expandedUserMessages = new SvelteSet<string>();
-	let copiedId = $state(false);
+	const expandedMessageDiffs = new SvelteSet<string>();
+	const expandedMessageSubagents = new SvelteSet<string>();
 	const copiedMessageIds = new SvelteSet<string>();
+	let copiedId = $state(false);
 	let highlightedTokenMessageId = $state<string | null>(null);
 	let exportedSession = $state(false);
 	const exportedMessageIds = new SvelteSet<string>();
+
+	function openDiffViewer(filePath?: string) {
+		if (filePath) selectedDiffPath = filePath;
+		view = 'changes';
+		if (typeof window !== 'undefined') {
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		}
+	}
+
+	function toggleMessageDiffs(id: string) {
+		if (expandedMessageDiffs.has(id)) {
+			expandedMessageDiffs.delete(id);
+		} else {
+			expandedMessageDiffs.add(id);
+		}
+	}
+
+	function toggleMessageSubagents(id: string) {
+		if (expandedMessageSubagents.has(id)) {
+			expandedMessageSubagents.delete(id);
+		} else {
+			expandedMessageSubagents.add(id);
+		}
+	}
+
+	function messageSubagents(message: ConversationEntry): ToolCallDetail[] {
+		return (
+			message.activity?.tools?.filter(
+				(t) =>
+					t.kind === 'subagent' ||
+					t.name.toLowerCase().includes('subagent') ||
+					t.name.startsWith('agent:') ||
+					t.name.startsWith('sub_agent') ||
+					t.name === 'delegate_task' ||
+					t.name === 'spawn_agent'
+			) ?? []
+		);
+	}
+
+	function messageFileChanges(message: ConversationEntry) {
+		const edits = message.activity?.edits ?? [];
+		let filesCount = 0;
+		let additions = 0;
+		let deletions = 0;
+		const filesList: Array<{
+			path: string;
+			operation: string;
+			diff?: string;
+			parsedDiff?: ParsedDiff;
+		}> = [];
+
+		for (const edit of edits) {
+			for (const f of edit.files ?? []) {
+				if (!f.path) continue;
+				filesCount += 1;
+				const parsed = f.diff ? parseUnifiedDiff(f.diff) : undefined;
+				if (parsed) {
+					additions += parsed.additions;
+					deletions += parsed.deletions;
+				}
+				filesList.push({
+					path: f.path,
+					operation: f.operation ?? 'update',
+					diff: f.diff,
+					parsedDiff: parsed
+				});
+			}
+		}
+		return { edits, filesCount, additions, deletions, filesList };
+	}
 
 	// Multi-select messages state
 	const selectedMessageIds = new SvelteSet<string>();
@@ -456,7 +549,7 @@
 
 				<!-- Concise Integrated Metadata Line -->
 				<div
-					class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 font-mono text-xs text-(--muted)"
+					class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 font-mono text-xs text-(--muted)"
 				>
 					<span class="inline-flex items-center gap-1.5">
 						<Clock class="h-3.5 w-3.5 text-(--muted)" />
@@ -489,6 +582,28 @@
 							)} tokens</span
 						>
 					</button>
+					<span>·</span>
+					{#if subagents.length > 0}
+						<button
+							type="button"
+							class="inline-flex cursor-pointer items-center gap-1.5 font-bold text-purple-400 hover:underline"
+							onclick={() => (view = 'subagents')}
+							title="Click to inspect subagents fleet and segregated telemetry"
+						>
+							<Bot class="h-3.5 w-3.5 text-purple-400" />
+							<span>Subagents: {subagents.length} active</span>
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="inline-flex cursor-pointer items-center gap-1.5 opacity-75 hover:text-(--ink) hover:opacity-100"
+							onclick={() => (view = 'subagents')}
+							title="Click to inspect subagents status"
+						>
+							<Bot class="h-3.5 w-3.5 opacity-60" />
+							<span>Subagents: None</span>
+						</button>
+					{/if}
 				</div>
 			</div>
 
@@ -530,7 +645,7 @@
 		<div
 			class="mt-5 -mb-5 flex items-center justify-between border-t border-(--line) pt-3 sm:-mb-6"
 		>
-			<div class="flex items-center gap-6">
+			<div class="flex flex-wrap items-center gap-6">
 				<button
 					type="button"
 					class="group relative inline-flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-bold transition-all {view ===
@@ -563,6 +678,50 @@
 				>
 					<BarChart3 class="h-3.5 w-3.5 {view === 'usage' ? 'text-amber-500' : 'text-(--muted)'}" />
 					<span>Usage & Analytics</span>
+				</button>
+
+				{#if fileChanges.totalFiles > 0}
+					<button
+						type="button"
+						class="group relative inline-flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-bold transition-all {view ===
+						'changes'
+							? 'border-emerald-500 text-emerald-400'
+							: 'border-transparent text-(--muted) hover:border-(--line) hover:text-(--ink)'}"
+						onclick={() => (view = 'changes')}
+					>
+						<GitCommit
+							class="h-3.5 w-3.5 {view === 'changes' ? 'text-emerald-400' : 'text-(--muted)'}"
+						/>
+						<span>Changes</span>
+						<span
+							class="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-extrabold transition-colors {view ===
+							'changes'
+								? 'border border-emerald-500/30 bg-emerald-500/20 text-emerald-400'
+								: 'bg-(--panel-subtle) text-(--muted)'}"
+						>
+							{fileChanges.totalFiles}
+						</span>
+					</button>
+				{/if}
+
+				<button
+					type="button"
+					class="group relative inline-flex cursor-pointer items-center gap-2 border-b-2 pb-3 text-xs font-bold transition-all {view ===
+					'subagents'
+						? 'border-purple-500 text-purple-300'
+						: 'border-transparent text-(--muted) hover:border-(--line) hover:text-(--ink)'}"
+					onclick={() => (view = 'subagents')}
+				>
+					<Bot class="h-3.5 w-3.5 {view === 'subagents' ? 'text-purple-400' : 'text-(--muted)'}" />
+					<span>Subagents</span>
+					<span
+						class="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-extrabold transition-colors {view ===
+						'subagents'
+							? 'border border-purple-500/30 bg-purple-500/20 text-purple-300'
+							: 'bg-(--panel-subtle) text-(--muted)'}"
+					>
+						{subagents.length}
+					</span>
 				</button>
 			</div>
 
@@ -740,6 +899,32 @@
 										/>
 									</button>
 								{/if}
+
+								{@const msgSub = messageSubagents(message)}
+
+								{#if msgSub.length > 0}
+									<button
+										type="button"
+										class="inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs font-bold transition-all {expandedMessageSubagents.has(
+											message.id
+										)
+											? 'border-purple-500 bg-purple-500/30 text-purple-200 shadow-xs'
+											: 'border-purple-500/50 bg-purple-500/20 text-purple-300 hover:border-purple-400 hover:bg-purple-500/30'}"
+										onclick={(e) => {
+											e.stopPropagation();
+											toggleMessageSubagents(message.id);
+										}}
+										title="Click to view subagent execution details, prompt, and output for this turn"
+									>
+										<Bot class="h-3 w-3" />
+										<span>{msgSub.length} Subagent{msgSub.length === 1 ? '' : 's'} used</span>
+										{#if expandedMessageSubagents.has(message.id)}
+											<ChevronDown class="h-3 w-3" />
+										{:else}
+											<ChevronRight class="h-3 w-3" />
+										{/if}
+									</button>
+								{/if}
 							{:else}
 								<span class="role-badge">
 									<User class="h-3.5 w-3.5" />
@@ -900,33 +1085,276 @@
 								<div class="markdown" use:markdown={message.text}></div>
 							{/if}
 
-							<!-- Assistant Tool / Activity Accordion -->
+							<!-- Assistant Tool / Activity Accordion & File Diffs -->
 							{#if message.activity}
+								{@const msgChanges = messageFileChanges(message)}
+								{@const msgSub = messageSubagents(message)}
 								<div class="activity-box">
-									<button
-										class="activity-toggle"
-										type="button"
-										aria-expanded={expandedActivities.has(message.id)}
-										onclick={() => toggleActivity(message.id)}
-									>
-										<div class="flex items-center gap-2 font-medium">
-											<Terminal class="h-3.5 w-3.5 text-(--accent)" />
-											<span>Execution Details & Tools ({message.activity.tools.length} calls)</span>
-										</div>
-										<div class="flex items-center gap-1 text-[11px] text-(--muted)">
-											<span
-												>{expandedActivities.has(message.id)
-													? 'Hide details'
-													: 'Show details'}</span
-											>
-											{#if expandedActivities.has(message.id)}
-												<ChevronDown class="h-3.5 w-3.5" />
-											{:else}
-												<ChevronRight class="h-3.5 w-3.5" />
-											{/if}
-										</div>
-									</button>
+									<div class="flex flex-wrap items-center gap-2">
+										<!-- Execution Details & Tools Toggle -->
+										<button
+											class="activity-toggle"
+											type="button"
+											aria-expanded={expandedActivities.has(message.id)}
+											onclick={() => toggleActivity(message.id)}
+										>
+											<div class="flex items-center gap-2 font-medium">
+												<Terminal class="h-3.5 w-3.5 text-(--accent)" />
+												<span
+													>Execution Details & Tools ({message.activity.tools.length} calls)</span
+												>
+											</div>
+											<div class="flex items-center gap-1 text-[11px] text-(--muted)">
+												<span
+													>{expandedActivities.has(message.id)
+														? 'Hide details'
+														: 'Show details'}</span
+												>
+												{#if expandedActivities.has(message.id)}
+													<ChevronDown class="h-3.5 w-3.5" />
+												{:else}
+													<ChevronRight class="h-3.5 w-3.5" />
+												{/if}
+											</div>
+										</button>
 
+										<!-- File Changes Button (Placed right beside Execution & Tools) -->
+										{#if msgChanges.filesCount > 0}
+											<button
+												type="button"
+												class="inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-1.5 font-mono text-xs font-bold transition-all {expandedMessageDiffs.has(
+													message.id
+												)
+													? 'border-emerald-500 bg-emerald-500/20 text-emerald-300'
+													: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:border-emerald-400 hover:bg-emerald-500/20'}"
+												aria-expanded={expandedMessageDiffs.has(message.id)}
+												onclick={() => toggleMessageDiffs(message.id)}
+												title="Click to toggle code changes made in this message"
+											>
+												<GitCommit class="h-3.5 w-3.5" />
+												<span class="text-xs"
+													>{msgChanges.filesCount} file{msgChanges.filesCount === 1 ? '' : 's'} changed</span
+												>
+												<span
+													class="py-0.2 rounded bg-emerald-500/20 px-1.5 text-[10px] font-extrabold text-emerald-300"
+												>
+													+{msgChanges.additions} -{msgChanges.deletions}
+												</span>
+												{#if expandedMessageDiffs.has(message.id)}
+													<ChevronDown class="h-3.5 w-3.5" />
+												{:else}
+													<ChevronRight class="h-3.5 w-3.5" />
+												{/if}
+											</button>
+										{/if}
+									</div>
+
+									<!-- Inline Subagent Execution (Expands right below when Subagent button is clicked) -->
+									{#if expandedMessageSubagents.has(message.id) && msgSub.length > 0}
+										<div
+											class="mt-2.5 space-y-3 rounded-lg border border-purple-500/30 bg-(--panel) p-3.5 shadow-xs"
+										>
+											<div
+												class="flex items-center justify-between border-b border-(--line-subtle) pb-2"
+											>
+												<div class="flex items-center gap-2 font-mono text-xs">
+													<Bot class="h-4 w-4 text-purple-400" />
+													<span class="font-bold text-purple-300"
+														>Subagent Activity in This Turn</span
+													>
+													<span class="text-[11px] text-(--muted)"
+														>({msgSub.length} subagent call{msgSub.length === 1 ? '' : 's'})</span
+													>
+												</div>
+												<button
+													type="button"
+													class="inline-flex cursor-pointer items-center gap-1 font-mono text-[11px] font-semibold text-purple-400 hover:underline"
+													onclick={() => (view = 'subagents')}
+													title="Open subagents fleet cockpit"
+												>
+													<span class="text-xs">Open Cockpit</span>
+													<ArrowUpRight class="h-3 w-3" />
+												</button>
+											</div>
+
+											<div class="space-y-3">
+												{#each msgSub as tool (tool.id)}
+													<div
+														class="overflow-hidden rounded-lg border border-purple-500/20 bg-(--field)"
+													>
+														<div
+															class="flex items-center justify-between border-b border-(--line-subtle) bg-purple-500/10 px-3 py-2 font-mono text-xs"
+														>
+															<div class="flex items-center gap-2">
+																<span class="h-2 w-2 rounded-full bg-purple-400"></span>
+																<b class="text-purple-300">{tool.name}</b>
+																{#if tool.status}
+																	<span
+																		class="py-0.2 rounded bg-purple-500/20 px-1.5 text-[10px] font-semibold text-purple-300"
+																	>
+																		{tool.status}
+																	</span>
+																{/if}
+															</div>
+															<span class="text-(--muted)">{duration(tool.durationMs)}</span>
+														</div>
+
+														<div class="space-y-2.5 p-3 font-mono text-xs">
+															{#if tool.input}
+																<div class="space-y-1">
+																	<span
+																		class="text-[10px] font-bold tracking-wider text-(--muted) uppercase"
+																		>Input / Task Prompt:</span
+																	>
+																	<pre
+																		class="max-h-48 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(tool.input)}</pre>
+																</div>
+															{/if}
+
+															{#if tool.output}
+																<div class="space-y-1">
+																	<span
+																		class="text-[10px] font-bold tracking-wider text-emerald-400 uppercase"
+																		>Output / Result:</span
+																	>
+																	<pre
+																		class="max-h-60 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(tool.output)}</pre>
+																</div>
+															{/if}
+														</div>
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
+
+									<!-- Inline File Changes Diffs (Expands right below when File Changes button is clicked) -->
+									{#if expandedMessageDiffs.has(message.id) && msgChanges.filesCount > 0}
+										<div
+											class="mt-2.5 space-y-3 rounded-lg border border-emerald-500/30 bg-(--panel) p-3.5 shadow-xs"
+										>
+											<div
+												class="flex items-center justify-between border-b border-(--line-subtle) pb-2"
+											>
+												<div class="flex items-center gap-2 font-mono text-xs">
+													<GitCommit class="h-4 w-4 text-emerald-400" />
+													<span class="font-bold text-emerald-400"
+														>Code Changes in This Message</span
+													>
+													<span class="text-[11px] text-(--muted)"
+														>({msgChanges.filesCount} file{msgChanges.filesCount === 1
+															? ''
+															: 's'})</span
+													>
+												</div>
+												<div class="flex items-center gap-1.5 font-mono text-xs">
+													<span
+														class="rounded bg-emerald-500/15 px-1.5 py-0.5 font-bold text-emerald-400"
+														>+{msgChanges.additions}</span
+													>
+													<span class="rounded bg-rose-500/15 px-1.5 py-0.5 font-bold text-rose-400"
+														>-{msgChanges.deletions}</span
+													>
+												</div>
+											</div>
+
+											<div class="space-y-3">
+												{#each msgChanges.filesList as file (file.path)}
+													<div
+														class="overflow-hidden rounded-lg border border-(--line) bg-(--field)"
+													>
+														<div
+															class="flex items-center justify-between border-b border-(--line-subtle) bg-(--panel-subtle)/70 px-3 py-1.5 font-mono text-xs"
+														>
+															<div class="flex min-w-0 items-center gap-2">
+																<span
+																	class="inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded text-[10px] font-bold uppercase {file.operation ===
+																		'create' || file.operation === 'add'
+																		? 'bg-emerald-500/20 text-emerald-400'
+																		: file.operation === 'delete'
+																			? 'bg-rose-500/20 text-rose-400'
+																			: 'bg-sky-500/20 text-sky-400'}"
+																>
+																	{file.operation.slice(0, 1).toUpperCase()}
+																</span>
+																<b class="truncate text-(--ink)">{file.path}</b>
+															</div>
+															<div class="flex items-center gap-2">
+																<button
+																	type="button"
+																	class="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] font-semibold text-emerald-400 hover:underline"
+																	onclick={() => openDiffViewer(file.path)}
+																	title="Open this file in Changes tab"
+																>
+																	<span>Full Diff</span>
+																	<ArrowUpRight class="h-3 w-3" />
+																</button>
+																<span
+																	class="rounded bg-(--panel) px-1.5 py-0.5 text-[10px] font-semibold text-(--muted) uppercase"
+																>
+																	{file.operation}
+																</span>
+															</div>
+														</div>
+
+														{#if file.parsedDiff && file.parsedDiff.hunks.length > 0}
+															<div class="overflow-x-auto font-mono text-xs">
+																{#each file.parsedDiff.hunks as hunk, hunkIdx (hunkIdx)}
+																	<div class="diff-hunk">
+																		<div class="diff-hunk-header">{hunk.header}</div>
+																		<table class="diff-table w-full border-collapse">
+																			<tbody>
+																				{#each hunk.lines as line, lineIdx (lineIdx)}
+																					{#if line.type !== 'hunk-header'}
+																						<tr
+																							class="diff-row"
+																							class:diff-row-add={line.type === 'add'}
+																							class:diff-row-del={line.type === 'del'}
+																							class:diff-row-context={line.type === 'context'}
+																							class:diff-row-meta={line.type === 'meta'}
+																						>
+																							<td class="diff-gutter-num select-none"
+																								>{line.oldLineNumber ?? ''}</td
+																							>
+																							<td class="diff-gutter-num select-none"
+																								>{line.newLineNumber ?? ''}</td
+																							>
+																							<td class="diff-gutter-marker select-none">
+																								{line.type === 'add'
+																									? '+'
+																									: line.type === 'del'
+																										? '-'
+																										: ' '}
+																							</td>
+																							<td class="diff-line-content">
+																								<pre
+																									class="m-0 bg-transparent p-0 font-mono text-xs whitespace-pre-wrap"
+																									use:highlight={{ code: line.content || ' ', path: file.path }}
+																								></pre>
+																							</td>
+																						</tr>
+																					{/if}
+																				{/each}
+																			</tbody>
+																		</table>
+																	</div>
+																{/each}
+															</div>
+														{:else if file.diff}
+															<pre
+																class="m-0 overflow-x-auto bg-(--canvas) p-3 font-mono text-xs whitespace-pre-wrap text-(--ink)">{file.diff}</pre>
+														{:else}
+															<div class="p-3 text-xs text-(--muted) italic">
+																No unified diff captured for this modification.
+															</div>
+														{/if}
+													</div>
+												{/each}
+											</div>
+										</div>
+									{/if}
+
+									<!-- Execution Details and Tools Accordion Body -->
 									{#if expandedActivities.has(message.id)}
 										<div class="activity-body">
 											<!-- Work Metrics Grid -->
@@ -965,7 +1393,7 @@
 												/>
 											{/if}
 
-											<!-- File Edits Diffs -->
+											<!-- File Edits Diffs Inside Execution Details -->
 											{#if message.activity.edits.length}
 												<div class="space-y-2">
 													<span
@@ -1019,7 +1447,7 @@
 				</div>
 			{/each}
 		</div>
-	{:else}
+	{:else if view === 'usage'}
 		<!-- Usage & Token Analytics View -->
 		<div class="space-y-6">
 			<!-- Intent-Focused Header Banner -->
@@ -1393,7 +1821,79 @@
 					</table>
 				</div>
 			</div>
+
+			{#if subagents.length > 0}
+				<!-- Multi-Agent Telemetry Summary in Analytics Tab -->
+				<div class="space-y-4 rounded-xl border border-purple-500/30 bg-(--panel) p-5.5 shadow-sm">
+					<div class="flex items-center justify-between">
+						<div class="flex items-center gap-2">
+							<Bot class="h-4.5 w-4.5 text-purple-400" />
+							<div>
+								<h3 class="text-base font-bold text-(--ink)">
+									Multi-Agent & Subagents Resource Split
+								</h3>
+								<p class="text-xs text-(--muted)">
+									Separate footprint distribution between primary agent and child subagents
+								</p>
+							</div>
+						</div>
+						<button
+							type="button"
+							class="inline-flex cursor-pointer items-center gap-1 text-xs font-semibold text-purple-400 hover:underline"
+							onclick={() => (view = 'subagents')}
+						>
+							<span>Open Subagents Cockpit</span>
+							<ArrowUpRight class="h-3.5 w-3.5" />
+						</button>
+					</div>
+
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						<div class="rounded-xl border border-(--line) bg-(--panel-subtle)/40 p-4">
+							<span class="text-xs font-semibold text-(--muted)">Active Subagent Threads</span>
+							<b class="mt-1 block font-mono text-xl text-(--ink)">{subagents.length}</b>
+						</div>
+						<div class="rounded-xl border border-(--line) bg-(--panel-subtle)/40 p-4">
+							<span class="text-xs font-semibold text-(--muted)">Subagents Token Footprint</span>
+							<b class="mt-1 block font-mono text-xl text-purple-300">
+								{number(
+									subagents.reduce(
+										(sum, s) =>
+											sum +
+											(s.usage?.latest?.usage?.totalTokens ??
+												s.token?.last?.totalTokens ??
+												s.token?.total?.totalTokens ??
+												0),
+										0
+									)
+								)}
+							</b>
+						</div>
+						<div class="rounded-xl border border-(--line) bg-(--panel-subtle)/40 p-4">
+							<span class="text-xs font-semibold text-(--muted)">Subagent Tool Runtime</span>
+							<b class="mt-1 block font-mono text-xl text-sky-400">
+								{duration(
+									subagents.reduce(
+										(sum, s) =>
+											sum +
+											(s.conversation ?? []).reduce(
+												(subSum, m) => subSum + (m.activity?.breakdown?.measuredToolMs ?? 0),
+												0
+											),
+										0
+									)
+								)}
+							</b>
+						</div>
+					</div>
+				</div>
+			{/if}
 		</div>
+	{:else if view === 'changes'}
+		<!-- File Changes & Modifications Diff Viewer -->
+		<FileDiffViewer summary={fileChanges} initialSelectedPath={selectedDiffPath} />
+	{:else if view === 'subagents'}
+		<!-- Subagents Fleet & Segregated Telemetry Cockpit -->
+		<SubagentTelemetry mainSession={detail} {subagents} />
 	{/if}
 
 	<!-- Debug & Raw Data Accordion -->

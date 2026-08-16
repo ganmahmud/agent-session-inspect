@@ -208,3 +208,73 @@ test('classifies Codex approval reviews separately from user conversation', asyn
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
+
+test('tracks subagent activity events and builds subagent relationship graph', async () => {
+	const directory = tempDirectory();
+	try {
+		const subagentThread = '44444444-4444-4444-4444-444444444444';
+		const log = writeLog(directory, 'parent.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('event_msg', { type: 'user_message', message: 'Spawn a subagent helper' }),
+			jsonLine('event_msg', { type: 'sub_agent_activity', agent_thread_id: subagentThread, name: 'code_reviewer', status: 'completed', duration_ms: 1200 }),
+			jsonLine('event_msg', { type: 'agent_message', message: 'Subagent completed analysis' }),
+		]);
+		const scan = await scanCodex(log);
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		assert.equal(detail.relationships.some((r) => r.type === 'subagent' && r.sessionId === subagentThread), true);
+		const subagentTool = detail.conversation[1]?.activity?.tools.find((t) => t.kind === 'subagent');
+		assert.ok(subagentTool);
+		assert.equal(subagentTool.name, 'code_reviewer');
+		assert.equal(subagentTool.durationMs, 1200);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('correctly parses unified diff hunks and aggregates file changes', async () => {
+	const { parseUnifiedDiff, extractSessionFileChanges } = await import('../dashboard/src/lib/diff-parser.ts');
+	const diffText = [
+		'--- a/src/app.ts',
+		'+++ b/src/app.ts',
+		'@@ -1,4 +1,6 @@',
+		' const a = 1;',
+		'-const b = 2;',
+		'+const b = 3;',
+		'+const c = 4;',
+		' const d = 5;'
+	].join('\n');
+
+	const parsed = parseUnifiedDiff(diffText);
+	assert.equal(parsed.additions, 2);
+	assert.equal(parsed.deletions, 1);
+	assert.equal(parsed.hunks.length, 1);
+	assert.equal(parsed.hunks[0].lines.length, 6);
+
+	const mockSessionDetail: any = {
+		id: 'mock-1',
+		conversation: [
+			{
+				id: 'msg-1',
+				role: 'assistant',
+				activity: {
+					edits: [
+						{
+							id: 'edit-1',
+							status: 'completed',
+							files: [{ path: '/repo/src/app.ts', operation: 'update', diff: diffText }]
+						}
+					]
+				}
+			}
+		],
+		debug: { unattachedActivities: [] }
+	};
+
+	const summary = extractSessionFileChanges(mockSessionDetail);
+	assert.equal(summary.totalFiles, 1);
+	assert.equal(summary.totalAdditions, 2);
+	assert.equal(summary.totalDeletions, 1);
+	assert.equal(summary.files[0].basename, 'app.ts');
+	assert.equal(summary.files[0].status, 'modified');
+});
+

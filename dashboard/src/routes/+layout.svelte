@@ -2,6 +2,7 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import type { Snippet } from 'svelte';
+	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page, navigating } from '$app/state';
 	import { resolveRoute } from '$app/paths';
 	import SessionSkeleton from '$lib/components/SessionSkeleton.svelte';
@@ -15,7 +16,8 @@
 		Zap,
 		MessageSquare,
 		Upload,
-		AlertCircle
+		AlertCircle,
+		Bot
 	} from '@lucide/svelte';
 	import type { SessionInventory } from '../../../src/types.ts';
 	import type { LayoutData } from './$types';
@@ -37,7 +39,48 @@
 	}
 
 	// Track which sessions were imported
-	const importedIds = $derived(new Set(data.importedSessionIds ?? []));
+	const importedIds = $derived(new SvelteSet(data.importedSessionIds ?? []));
+
+	// Pre-map parent session IDs to child sessions for O(1) multi-agent resolution
+	const parentToChildrenMap = $derived.by(() => {
+		const map = new SvelteMap<string, SvelteSet<string>>();
+		for (const session of data.inventory.sessions) {
+			for (const rel of session.relationships ?? []) {
+				if (rel.type === 'parent' && rel.sessionId) {
+					let set = map.get(rel.sessionId);
+					if (!set) {
+						set = new SvelteSet();
+						map.set(rel.sessionId, set);
+					}
+					set.add(session.id);
+				}
+			}
+		}
+		return map;
+	});
+
+	function getSubagentCount(session: SessionInventory): number {
+		const directSubagentIds = (session.relationships ?? [])
+			.filter((r) => r.type === 'subagent')
+			.map((r) => r.sessionId);
+
+		const inverseChildren = parentToChildrenMap.get(session.id);
+		const allIds = new SvelteSet(directSubagentIds);
+		if (inverseChildren) {
+			for (const id of inverseChildren) {
+				allIds.add(id);
+			}
+		}
+
+		if (allIds.size === 0) {
+			const eventSubCount =
+				(session.eventCounts?.['sub_agent_activity'] ?? 0) +
+				(session.eventCounts?.['subagent_activity'] ?? 0) +
+				(session.eventCounts?.['agent_activity'] ?? 0);
+			return eventSubCount > 0 ? eventSubCount : 0;
+		}
+		return allIds.size;
+	}
 
 	const title = (session?: SessionInventory | { displayTitle?: { value?: string } }) =>
 		session?.displayTitle?.value ?? 'Untitled Codex session';
@@ -50,11 +93,13 @@
 	// Filter and sort session list
 	const regularSessions = () => {
 		if (sessionFilter === 'imported') return [];
-		let list = data.inventory.sessions.filter(
-			(session) =>
-				!importedIds.has(session.id) &&
-				`${title(session)} ${session.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
-		);
+		let list = data.inventory.sessions.filter((session) => {
+			if (importedIds.has(session.id)) return false;
+			const subCount = getSubagentCount(session);
+			const subText = subCount > 0 ? `subagent subagents ${subCount}` : '';
+			const matchText = `${title(session)} ${session.id} ${subText}`.toLocaleLowerCase();
+			return matchText.includes(query.toLocaleLowerCase());
+		});
 		if (sessionFilter === 'recent') {
 			list = [...list].sort(
 				(a, b) => new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime()
@@ -66,11 +111,13 @@
 	};
 
 	const importedSessionsList = () => {
-		return data.inventory.sessions.filter(
-			(session) =>
-				importedIds.has(session.id) &&
-				`${title(session)} ${session.id}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
-		);
+		return data.inventory.sessions.filter((session) => {
+			if (!importedIds.has(session.id)) return false;
+			const subCount = getSubagentCount(session);
+			const subText = subCount > 0 ? `subagent subagents ${subCount}` : '';
+			const matchText = `${title(session)} ${session.id} ${subText}`.toLocaleLowerCase();
+			return matchText.includes(query.toLocaleLowerCase());
+		});
 	};
 
 
@@ -204,7 +251,7 @@
 	{/if}
 	<!-- Top Navigation Header Aligned to Workspace Grid -->
 	<header class="sticky top-0 z-30 border-b border-(--line) bg-(--panel) backdrop-blur-md">
-		<div class="mx-auto grid max-w-[1540px] grid-cols-1 lg:grid-cols-[310px_minmax(0,1fr)]">
+		<div class="mx-auto grid max-w-[1600px] grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)]">
 			<!-- Header Left: App Branding (matches sidebar width & right border) -->
 			<div
 				class="flex items-center gap-3 border-b border-(--line) bg-(--panel) px-4 py-3 lg:border-r lg:border-b-0 lg:border-(--line)"
@@ -284,7 +331,7 @@
 	</header>
 
 	<!-- Main Workspace Grid -->
-	<main class="mx-auto grid max-w-[1540px] grid-cols-1 gap-0 lg:grid-cols-[310px_minmax(0,1fr)]">
+	<main class="mx-auto grid max-w-[1600px] grid-cols-1 gap-0 lg:grid-cols-[340px_minmax(0,1fr)]">
 		<!-- Sidebar Navigation with automatic viewport prefetching -->
 		<aside
 			data-sveltekit-preload-code="viewport"
@@ -386,6 +433,7 @@
 						</div>
 						<div class="divide-y divide-indigo-500/10">
 							{#each importedSessionsList() as session (session.id)}
+								{@const subCount = getSubagentCount(session)}
 								<a
 									href={resolveRoute('/session/[id]', { id: session.id })}
 									data-sveltekit-preload-code="viewport"
@@ -400,7 +448,7 @@
 										>
 											{title(session)}
 										</span>
-										<div class="flex shrink-0 items-center gap-1">
+										<div class="flex shrink-0 items-center gap-1.5">
 											<span class="imported-badge">Imported</span>
 											<button
 												type="button"
@@ -419,12 +467,24 @@
 											<Clock class="h-3 w-3" />
 											{date(session.startedAt)}
 										</span>
-										<span
-											class="inline-flex items-center gap-1 rounded bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold"
-										>
-											<Zap class="h-3 w-3 text-amber-500" />
-											{number(latestTokens(session))}
-										</span>
+										<div class="flex shrink-0 items-center gap-1.5">
+											{#if subCount > 0}
+												<span
+													class="subagent-badge"
+													title="{subCount} subagent{subCount === 1 ? '' : 's'} used in this session"
+												>
+													<Bot class="h-2.5 w-2.5" />
+													<span>{subCount}</span>
+												</span>
+											{/if}
+											<span
+												class="inline-flex items-center gap-1 rounded bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+												title="{number(latestTokens(session))} tokens used"
+											>
+												<Zap class="h-3 w-3 text-amber-500" />
+												{number(latestTokens(session))}
+											</span>
+										</div>
 									</div>
 								</a>
 							{/each}
@@ -441,6 +501,7 @@
 						</div>
 					{/if}
 					{#each regularSessions() as session (session.id)}
+						{@const subCount = getSubagentCount(session)}
 						<a
 							href={resolveRoute('/session/[id]', { id: session.id })}
 							data-sveltekit-preload-code="viewport"
@@ -463,12 +524,24 @@
 									<Clock class="h-3 w-3" />
 									{date(session.startedAt)}
 								</span>
-								<span
-									class="inline-flex items-center gap-1 rounded bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold"
-								>
-									<Zap class="h-3 w-3 text-amber-500" />
-									{number(latestTokens(session))}
-								</span>
+								<div class="flex shrink-0 items-center gap-1.5">
+									{#if subCount > 0}
+										<span
+											class="subagent-badge"
+											title="{subCount} subagent{subCount === 1 ? '' : 's'} used in this session"
+										>
+											<Bot class="h-2.5 w-2.5" />
+											<span>{subCount}</span>
+										</span>
+									{/if}
+									<span
+										class="inline-flex items-center gap-1 rounded bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold"
+										title="{number(latestTokens(session))} tokens used"
+									>
+										<Zap class="h-3 w-3 text-amber-500" />
+										{number(latestTokens(session))}
+									</span>
+								</div>
 							</div>
 						</a>
 					{/each}

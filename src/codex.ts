@@ -151,7 +151,9 @@ function observeEvent(session: MutableSession, eventType: string, payload: JsonR
       session.tools.mcpCompleted += 1;
       break;
     case 'sub_agent_activity':
-      addRelationship(session, 'subagent', asText(payload.agent_thread_id));
+    case 'subagent_activity':
+    case 'agent_activity':
+      addRelationship(session, 'subagent', asText(payload.agent_thread_id) ?? asText(payload.subagent_id) ?? asText(payload.sub_agent_id) ?? asText(payload.thread_id) ?? asText(payload.session_id) ?? asText(payload.call_id));
       break;
     case 'thread_name_updated': {
       const title = asText(payload.thread_name);
