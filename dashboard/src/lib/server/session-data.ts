@@ -13,21 +13,23 @@ let cached: { createdAt: number; result: ScanResult } | undefined;
 
 /** In-memory store for imported session data (ephemeral — lost on server restart, capped to prevent leaks). */
 const importedSessions = new Map<string, SessionDetail>();
-const MAX_IMPORTED_SESSIONS = 20;
+const MAX_IMPORTED_SESSIONS = 10;
 
 /** LRU detail cache for parsed session details to avoid repetitive disk I/O while keeping memory bounded. */
 const detailCache = new Map<string, { detail: SessionDetail; accessedAt: number }>();
-const MAX_DETAIL_CACHE = 15;
+const MAX_DETAIL_CACHE = 4;
+
+const INVENTORY_CACHE_TTL_MS = 30_000;
 
 export async function sessionInventory(): Promise<ScanResult> {
-	if (cached && Date.now() - cached.createdAt < 2_000) return cached.result;
+	if (cached && Date.now() - cached.createdAt < INVENTORY_CACHE_TTL_MS) return cached.result;
 	const catalog = readCodexCatalog(catalogPaths);
 	const result = await scanCodex(sessionPath, { catalogTitles: catalog.titles, catalogErrors: catalog.errors });
 	cached = { createdAt: Date.now(), result };
 	return result;
 }
 
-export async function sessionDetail(id: string): Promise<SessionDetail | undefined> {
+export async function sessionDetail(id: string, existingInventory?: ScanResult): Promise<SessionDetail | undefined> {
 	// Check imported sessions first
 	const imported = importedSessions.get(id);
 	if (imported) return imported;
@@ -39,7 +41,7 @@ export async function sessionDetail(id: string): Promise<SessionDetail | undefin
 		return cachedEntry.detail;
 	}
 
-	const result = await sessionInventory();
+	const result = existingInventory ?? (await sessionInventory());
 	const session = result.sessions.find((item) => item.id === id);
 	if (session) {
 		const detail = await readCodexSessionDetail(session);
@@ -60,9 +62,9 @@ export async function sessionDetail(id: string): Promise<SessionDetail | undefin
 		s.relationships?.some((r) => r.type === 'subagent' && r.sessionId === id)
 	);
 	if (parentMatch) {
-		const parentDetail = await sessionDetail(parentMatch.id);
+		const parentDetail = await sessionDetail(parentMatch.id, result);
 		if (parentDetail) {
-			const subagents = await getSessionSubagents(parentDetail);
+			const subagents = await getSessionSubagents(parentDetail, result);
 			const matchingSub = subagents.find((s) => s.id === id);
 			if (matchingSub) {
 				importedSessions.set(id, matchingSub);
@@ -104,8 +106,11 @@ export function deleteImportedSession(id: string): boolean {
 }
 
 /** Look up all subagents for a session by direct and inverse relationships, and inline activity. */
-export async function getSessionSubagents(session: SessionDetail | SessionInventory): Promise<SessionDetail[]> {
-	const result = await sessionInventory();
+export async function getSessionSubagents(
+	session: SessionDetail | SessionInventory,
+	existingInventory?: ScanResult
+): Promise<SessionDetail[]> {
+	const result = existingInventory ?? (await sessionInventory());
 
 	// Direct subagent relationships
 	const directSubagentIds = (session.relationships || [])
@@ -136,9 +141,9 @@ export async function getSessionSubagents(session: SessionDetail | SessionInvent
 				debug: { hiddenMessages: [], unattachedActivities: [], malformedRecords: 0, unknownRecords: 0 }
 			});
 		} else {
-			const subDetail = await sessionDetail(subId);
-			if (subDetail) {
-				subagentDetails.push(subDetail);
+			const imported = importedSessions.get(subId);
+			if (imported) {
+				subagentDetails.push(imported);
 			}
 		}
 	}

@@ -57,9 +57,15 @@ function durationMs(value: unknown): number | undefined {
   return seconds === undefined && nanos === undefined ? undefined : Math.round((seconds ?? 0) * 1000 + (nanos ?? 0) / 1_000_000);
 }
 
-function compactJson(value: unknown): string | undefined {
+const MAX_PAYLOAD_STRING_LENGTH = 50_000;
+
+function compactJson(value: unknown, limit = MAX_PAYLOAD_STRING_LENGTH): string | undefined {
   if (value === undefined || value === null) return undefined;
-  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  if (str.length > limit) {
+    return str.slice(0, limit) + `\n\n... [Truncated ${str.length - limit} characters for memory optimization]`;
+  }
+  return str;
 }
 
 function messageText(content: unknown): string | undefined {
@@ -123,7 +129,11 @@ function editFiles(value: unknown): EditDetail['files'] {
   if (!changes) return [];
   return Object.entries(changes).map(([path, change]) => {
     const source = record(change);
-    return { path, operation: text(source?.type), diff: text(source?.unified_diff) };
+    let diff = text(source?.unified_diff);
+    if (diff && diff.length > MAX_PAYLOAD_STRING_LENGTH) {
+      diff = diff.slice(0, MAX_PAYLOAD_STRING_LENGTH) + '\n\n... [Truncated diff for memory optimization]';
+    }
+    return { path, operation: text(source?.type), diff };
   });
 }
 
@@ -160,27 +170,6 @@ function finalise(activity: PendingActivity, completedAt?: string): ReplyActivit
   return activity;
 }
 
-async function hasCompleteChatSurface(session: SessionInventory): Promise<boolean> {
-  let user = false;
-  let assistant = false;
-  for (const file of session.sourceFiles) {
-    const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
-    for await (const raw of input) {
-      try {
-        const source = record(JSON.parse(raw));
-        const payload = record(source?.payload);
-        if (text(source?.type) !== 'event_msg') continue;
-        user ||= text(payload?.type) === 'user_message';
-        assistant ||= text(payload?.type) === 'agent_message';
-        if (user && assistant) return true;
-      } catch {
-        // A malformed line must not stop the read-only fallback check.
-      }
-    }
-  }
-  return false;
-}
-
 function modelFromTurnContext(payload: JsonRecord, timestamp?: string): ModelConfiguration | undefined {
   const name = text(payload.model);
   return name ? { name, source: 'turn_context', observedAt: timestamp } : undefined;
@@ -206,7 +195,12 @@ function isInternalReviewMessage(value: string): boolean {
 }
 
 export async function readCodexSessionDetail(session: SessionInventory): Promise<SessionDetail> {
-  const useChatSurface = await hasCompleteChatSurface(session);
+  const useChatSurface = Boolean(
+    session.eventCounts &&
+    (session.eventCounts['event_msg.user_message'] ?? 0) > 0 &&
+    (session.eventCounts['event_msg.agent_message'] ?? 0) > 0
+  );
+
   const conversation: ConversationEntry[] = [];
   const hiddenMessages: DebugMessage[] = [];
   const unattachedActivities: ReplyActivity[] = [];
@@ -239,6 +233,7 @@ export async function readCodexSessionDetail(session: SessionInventory): Promise
       } catch {
         continue;
       }
+
       const timestamp = text(source.timestamp);
       const type = text(source.type);
       const payload = record(source.payload) ?? {};

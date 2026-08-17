@@ -195,6 +195,134 @@ function collectFiles(path: string): string[] {
   return files.sort();
 }
 
+interface FileScanCacheEntry {
+  mtimeMs: number;
+  size: number;
+  sessions: MutableSession[];
+  malformedRecords: number;
+}
+
+const fileScanCache = new Map<string, FileScanCacheEntry>();
+
+export function clearScanCache(): void {
+  fileScanCache.clear();
+}
+
+function cloneSession(session: MutableSession): MutableSession {
+  return {
+    ...session,
+    sourceFiles: [...session.sourceFiles],
+    cliVersions: [...session.cliVersions],
+    eventCounts: { ...session.eventCounts },
+    token: {
+      ...session.token,
+      total: session.token.total ? { ...session.token.total } : undefined,
+      last: session.token.last ? { ...session.token.last } : undefined,
+    },
+    tools: { ...session.tools },
+    relationships: session.relationships.map((r) => ({ ...r })),
+    relationshipKeys: new Set(session.relationshipKeys ?? []),
+    displayTitle: { ...session.displayTitle },
+    titleFromLog: session.titleFromLog ? { ...session.titleFromLog } : undefined,
+  };
+}
+
+function mergeSessions(target: MutableSession, source: MutableSession): void {
+  for (const f of source.sourceFiles) {
+    if (!target.sourceFiles.includes(f)) target.sourceFiles.push(f);
+  }
+  for (const v of source.cliVersions) {
+    if (!target.cliVersions.includes(v)) target.cliVersions.push(v);
+  }
+  target.cwd ??= source.cwd;
+  target.provider ??= source.provider;
+  target.recordCount += source.recordCount;
+  target.malformedRecords += source.malformedRecords;
+  target.unknownRecords += source.unknownRecords;
+  for (const [k, v] of Object.entries(source.eventCounts)) {
+    target.eventCounts[k] = (target.eventCounts[k] ?? 0) + v;
+  }
+  target.token.observations += source.token.observations;
+  target.token.missingUsageObservations += source.token.missingUsageObservations;
+  if (source.token.total) target.token.total = source.token.total;
+  if (source.token.last) target.token.last = source.token.last;
+  if (source.token.modelContextWindow) target.token.modelContextWindow = source.token.modelContextWindow;
+  target.tools.calls += source.tools.calls;
+  target.tools.outputs += source.tools.outputs;
+  target.tools.execCompleted += source.tools.execCompleted;
+  target.tools.mcpCompleted += source.tools.mcpCompleted;
+  target.taskCount += source.taskCount;
+  target.completedTaskCount += source.completedTaskCount;
+  target.abortedTaskCount += source.abortedTaskCount;
+  target.compactionCount += source.compactionCount;
+  target.rollbackCount += source.rollbackCount;
+  for (const rel of source.relationships) {
+    addRelationship(target, rel.type, rel.sessionId);
+  }
+  updateTime(target, source.startedAt);
+  updateTime(target, source.updatedAt);
+  if (source.titleFromLog) {
+    if (!target.titleFromLog || (source.titleFromLog.observedAt ?? '') >= (target.titleFromLog.observedAt ?? '')) {
+      target.titleFromLog = source.titleFromLog;
+    }
+  }
+}
+
+async function scanFileCached(
+  file: string,
+  sessions: Map<string, MutableSession>,
+  diagnostics: ScanResult['diagnostics']
+): Promise<void> {
+  let stat;
+  try {
+    stat = statSync(file);
+  } catch {
+    return;
+  }
+
+  const cached = fileScanCache.get(file);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
+    diagnostics.malformedRecords += cached.malformedRecords;
+    for (const cachedSession of cached.sessions) {
+      const existing = sessions.get(cachedSession.id);
+      if (existing) {
+        mergeSessions(existing, cachedSession);
+      } else {
+        sessions.set(cachedSession.id, cloneSession(cachedSession));
+      }
+    }
+    return;
+  }
+
+  const fileSessions = new Map<string, MutableSession>();
+  const fileDiagnostics: ScanResult['diagnostics'] = {
+    filesRead: 1,
+    malformedRecords: 0,
+    catalogErrors: [],
+  };
+
+  await scanFile(file, fileSessions, fileDiagnostics);
+
+  diagnostics.malformedRecords += fileDiagnostics.malformedRecords;
+  const sessionList = Array.from(fileSessions.values());
+
+  fileScanCache.set(file, {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    sessions: sessionList.map(cloneSession),
+    malformedRecords: fileDiagnostics.malformedRecords,
+  });
+
+  for (const s of sessionList) {
+    const existing = sessions.get(s.id);
+    if (existing) {
+      mergeSessions(existing, s);
+    } else {
+      sessions.set(s.id, cloneSession(s));
+    }
+  }
+}
+
 async function scanFile(file: string, sessions: Map<string, MutableSession>, diagnostics: ScanResult['diagnostics']): Promise<void> {
   let currentId: string | undefined;
   const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
@@ -270,7 +398,7 @@ export async function scanCodex(path: string, options: ScanOptions = {}): Promis
   const sessions = new Map<string, MutableSession>();
   for (const file of collectFiles(path)) {
     diagnostics.filesRead += 1;
-    await scanFile(file, sessions, diagnostics);
+    await scanFileCached(file, sessions, diagnostics);
   }
   applyTitles(sessions.values(), options.catalogTitles ?? []);
   const ordered = [...sessions.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.id.localeCompare(b.id));

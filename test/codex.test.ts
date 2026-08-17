@@ -278,3 +278,45 @@ test('correctly parses unified diff hunks and aggregates file changes', async ()
 	assert.equal(summary.files[0].status, 'modified');
 });
 
+test('incrementally caches unchanged session files and produces identical results across scans', async () => {
+	const { clearScanCache } = await import('../src/codex.ts');
+	clearScanCache();
+	const directory = tempDirectory();
+	try {
+		const fileA = writeLog(directory, 'a.jsonl', [
+			jsonLine('session_meta', { id: sessionOne, cwd: '/repo/a' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Session A' }),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-a' }),
+			jsonLine('event_msg', { type: 'task_complete', turn_id: 'turn-a' }),
+		]);
+		const fileB = writeLog(directory, 'b.jsonl', [
+			jsonLine('session_meta', { id: sessionTwo, cwd: '/repo/b' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Session B' }),
+		]);
+
+		const firstScan = await scanCodex(directory);
+		assert.equal(firstScan.sessions.length, 2);
+		assert.equal(firstScan.diagnostics.filesRead, 2);
+
+		// Second scan with identical files should hit the incremental cache
+		const secondScan = await scanCodex(directory);
+		assert.equal(secondScan.sessions.length, 2);
+		assert.equal(secondScan.sessions[0].id, firstScan.sessions[0].id);
+		assert.equal(secondScan.sessions[1].id, firstScan.sessions[1].id);
+		assert.equal(secondScan.sessions[0].displayTitle.value, firstScan.sessions[0].displayTitle.value);
+		assert.equal(secondScan.sessions[1].displayTitle.value, firstScan.sessions[1].displayTitle.value);
+
+		// Modify fileB with a new title and ensure cache invalidates for fileB
+		writeLog(directory, 'b.jsonl', [
+			jsonLine('session_meta', { id: sessionTwo, cwd: '/repo/b' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Session B Updated' }),
+		]);
+		const thirdScan = await scanCodex(directory);
+		const updatedB = thirdScan.sessions.find((s) => s.id === sessionTwo);
+		assert.equal(updatedB?.displayTitle.value, 'Session B Updated');
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+
