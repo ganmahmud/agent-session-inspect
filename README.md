@@ -1,6 +1,14 @@
 # Agent Session Inspect ⚡
 
+[![npm version](https://img.shields.io/npm/v/@ganmahmud/agent-session-inspect.svg?style=flat-square&color=cb3837)](https://www.npmjs.com/package/@ganmahmud/agent-session-inspect)
+[![npm downloads](https://img.shields.io/npm/dm/@ganmahmud/agent-session-inspect.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/@ganmahmud/agent-session-inspect)
+[![node version](https://img.shields.io/node/v/@ganmahmud/agent-session-inspect.svg?style=flat-square)](https://nodejs.org)
+[![license](https://img.shields.io/npm/l/@ganmahmud/agent-session-inspect.svg?style=flat-square&color=green)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ganmahmud/agent-session-inspect.svg?style=flat-square)](https://github.com/ganmahmud/agent-session-inspect/stargazers)
+
 Local, read-only inspection tool and dashboards for Codex agent sessions.
+
+![Agent Session Inspect Web Dashboard](assets/web-dashboard.png)
 
 ## Quick Start
 
@@ -34,11 +42,27 @@ agent-session-inspect web --port 4318
 
 ## Features
 
-- **⚡ Terminal TUI Dashboard (`tui` / `--ui`)**: Dual-pane keyboard & mouse interface with live session filtering, turn-by-turn activity logs, tool execution metrics, and raw metadata.
-- **🌐 Web Dashboard (`web` / `--web`)**: SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, timeline visualization, and rich markdown rendering.
-- **📦 Session Export & Import**: Download full sessions or single message interactions as JSON; drag-and-drop JSON files to inspect ephemeral sessions in-memory.
-- **📊 Terminal & JSON Summaries**: Quick scan tables or JSON outputs for CI/CD scripting (`--format json`).
-- **🔒 100% Local & Read-Only**: Parses local `~/.codex/sessions` logs directly without modifying data.
+### 🌐 Interactive Web Dashboard (`web` / `--web`)
+Modern SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, timeline visualization, and rich markdown rendering.
+
+### 🔍 Rich File Changes & Inline Diff Viewer
+Full patch inspection with side-by-side file tree, addition/deletion counters, and copyable unified diffs.
+
+![File Changes & Diff Viewer](assets/web-diff-viewer.png)
+
+### 📊 Context & Performance Diagnostics
+Token footprint breakdown, prompt cache efficiency, reasoning overhead metrics, and heavy-hitter turn spike analysis.
+
+![Session Diagnostics & Analytics](assets/web-analytics.png)
+
+### ⚡ Terminal TUI Dashboard (`tui` / `--ui`)
+Dual-pane keyboard & mouse interface with live session filtering, turn-by-turn activity logs, tool execution metrics, and raw metadata.
+
+### 📦 Session Export & Import
+Download full sessions or single message interactions as JSON; drag-and-drop JSON files in the web UI to inspect ephemeral sessions in-memory.
+
+### 🔒 100% Local & Read-Only
+Parses local `~/.codex/sessions` logs directly without modifying any user data.
 
 ## Local Development
 
@@ -53,3 +77,4 @@ npm run dashboard:dev
 ## License
 
 [MIT License](LICENSE) © [Gan Mahmud](https://github.com/ganmahmud)
+
