@@ -44,6 +44,26 @@ function formatNumber(value: number | undefined): string {
   return value === undefined ? '—' : new Intl.NumberFormat('en-US').format(value);
 }
 
+function formatCompactTokens(value: number | undefined): string {
+  if (value === undefined || value === null) return '0';
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
+function getSubagentCount(session: SessionInventory): number {
+  const directSubagentIds = (session.relationships ?? [])
+    .filter((r) => r.type === 'subagent')
+    .map((r) => r.sessionId);
+  if (directSubagentIds.length > 0) return directSubagentIds.length;
+  const eventSubCount =
+    (session.eventCounts?.['sub_agent_activity'] ?? 0) +
+    (session.eventCounts?.['subagent_activity'] ?? 0) +
+    (session.eventCounts?.['agent_activity'] ?? 0);
+  return eventSubCount > 0 ? eventSubCount : 0;
+}
+
 function duration(startedAt: string | undefined, updatedAt: string | undefined): string {
   if (!startedAt || !updatedAt) return '—';
   const milliseconds = Date.parse(updatedAt) - Date.parse(startedAt);
@@ -301,15 +321,21 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
   let selectedIndex = 0;
   let scrollOffset = 0;
   let rightScrollOffset = 0;
-  let activeTab = 0; // 0: Overview, 1: Activity, 2: Analytics, 3: Tools, 4: Metadata
+  let activeTab = 0; // 0: Overview, 1: Activity, 2: Analytics, 3: Tools, 4: Changes, 5: Subagents, 6: Metadata
   let activePane: 'sidebar' | 'main' = 'sidebar';
   let searchQuery = '';
   let isSearching = false;
-  let roleFilter: 'all' | 'user' | 'agent' | 'review' = 'all';
+  let selectedProjectFilter: string | null = null; // null = all projects
+  let roleFilter: 'all' | 'user' | 'agent' | 'review' | 'subagent' = 'all';
   let currentDetail: SessionDetail | null = null;
   let loadingDetail = false;
   let notificationMessage = '';
   let notificationTimer: NodeJS.Timeout | null = null;
+
+  // Extract all unique project names
+  const allProjects = Array.from(
+    new Set(sessions.map((s) => projectName(s)).filter((p) => p !== 'General / No Project'))
+  ).sort();
 
   const notify = (msg: string) => {
     notificationMessage = msg;
@@ -322,9 +348,19 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
   };
 
   const getFilteredSessions = () => {
-    if (!searchQuery.trim()) return sessions;
-    const q = searchQuery.toLowerCase();
-    return sessions.filter((s) => sanitize(displayName(s)).toLowerCase().includes(q) || s.id.toLowerCase().includes(q));
+    let list = sessions;
+    if (selectedProjectFilter) {
+      list = list.filter((s) => projectName(s).toLowerCase() === selectedProjectFilter!.toLowerCase());
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter((s) =>
+        sanitize(displayName(s)).toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q) ||
+        projectName(s).toLowerCase().includes(q)
+      );
+    }
+    return list;
   };
 
   const loadDetail = async (session: SessionInventory) => {
@@ -361,7 +397,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const cols = process.stdout.columns || 100;
     const rows = process.stdout.rows || 30;
 
-    const sidebarWidth = Math.min(42, Math.max(30, Math.floor(cols * 0.36)));
+    const sidebarWidth = Math.min(46, Math.max(32, Math.floor(cols * 0.36)));
     const mainWidth = Math.max(20, cols - sidebarWidth - 1);
 
     const filtered = getFilteredSessions();
@@ -381,7 +417,8 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     // 2. Header Banner
     const totalTokens = sessions.reduce((sum, s) => sum + (latestTokens(s) ?? 0), 0);
     const headerTitle = `⚡ AGENT SESSION INSPECTOR`;
-    const headerStats = `${filtered.length}/${sessions.length} sessions · ${formatNumber(totalTokens)} tokens`;
+    const projectFilterText = selectedProjectFilter ? `📁 ${selectedProjectFilter} · ` : '';
+    const headerStats = `${projectFilterText}${filtered.length}/${sessions.length} sessions · ${formatCompactTokens(totalTokens)} tokens`;
     const focusTag = activePane === 'sidebar' ? c.bgFocusTag(' SIDEBAR FOCUS ') : c.bgFocusTag(' MAIN FOCUS ');
     const headerLine = ` ${c.bold(headerTitle)}  ${c.dim('│')}  ${c.yellow(headerStats)}  ${focusTag}`.padEnd(cols - 1);
     buffer.push(move(1, 1) + c.bgHeader(headerLine.slice(0, cols)));
@@ -393,7 +430,10 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     }
 
     // 4. Sidebar Search / Filter Bar
-    const searchStr = isSearching ? `🔍 SEARCH: ${searchQuery}_` : `🔍 FILTER: ${searchQuery || 'all sessions'}`;
+    const prjTag = selectedProjectFilter ? ` [PRJ: ${selectedProjectFilter}]` : '';
+    const searchStr = isSearching
+      ? `🔍 SEARCH: ${searchQuery}_`
+      : `🔍 FILTER: ${searchQuery || 'all sessions'}${prjTag}`;
     const sidebarTitleColor = activePane === 'sidebar' ? c.cyan : c.dim;
     buffer.push(move(2, 2) + '\x1b[K' + sidebarTitleColor(c.bold(searchStr.slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2))));
     buffer.push(move(3, 1) + '\x1b[K' + c.darkGray('─'.repeat(sidebarWidth)));
@@ -408,7 +448,12 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       const isSelected = idx === selectedIndex;
       const cleanTitle = sanitize(displayName(session));
       const tokens = latestTokens(session);
-      const sub = `${date(session.startedAt)} · ${duration(session.startedAt, session.updatedAt)}${tokens ? ' · ' + formatNumber(tokens) + 't' : ''}`;
+      const subCount = getSubagentCount(session);
+      const pName = projectName(session);
+
+      const subagentsStr = subCount > 0 ? ` · 🤖${subCount}` : '';
+      const prjStr = pName && pName !== 'General / No Project' && !selectedProjectFilter ? ` · 📁${pName.slice(0, 10)}` : '';
+      const sub = `${date(session.startedAt)} · ${duration(session.startedAt, session.updatedAt)}${tokens ? ' · ' + formatCompactTokens(tokens) + 't' : ''}${subagentsStr}${prjStr}`;
 
       const icon = isSelected ? (activePane === 'sidebar' ? '▶ ' : '👉 ') : '◈ ';
       const line1Text = (icon + cleanTitle).slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2);
@@ -429,9 +474,9 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       buffer.push(move(r, 1) + '\x1b[K');
     }
 
-    // 6. Right Panel Header & Navigation Tabs
+    // 6. Right Panel Header & Navigation Tabs (7 tabs)
     const selectedSession = filtered[selectedIndex];
-    const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Metadata '];
+    const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Changes ', ' Subagents ', ' Metadata '];
     const tabHeaders = tabLabels.map((label, idx) => {
       const shortcut = `[${idx + 1}]`;
       const fullLabel = `${shortcut}${label}`;
@@ -453,36 +498,41 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         currentLines.push(c.gray(`ID: ${selectedSession.id}`));
         currentLines.push('');
 
-        currentLines.push(...formatCard('TIMELINE & METRICS', c.cyan, [
+        currentLines.push(...formatCard('WORKSPACE & TIMELINE', c.cyan, [
           ...(selectedSession.cwd || selectedSession.projectName ? [
-            `Project      ${projectName(selectedSession)}`,
-            ...(selectedSession.cwd ? [`Workspace    ${selectedSession.cwd}`] : []),
+            `Project Workspace   ${projectName(selectedSession)}`,
+            ...(selectedSession.cwd ? [`Directory Path      ${selectedSession.cwd}`] : []),
           ] : []),
-          `Started      ${selectedSession.startedAt ?? 'unknown'}`,
-          `Updated      ${selectedSession.updatedAt ?? 'unknown'}`,
-          `Duration     ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,
-          `Title Src    ${selectedSession.displayTitle.source}`,
+          `Started             ${selectedSession.startedAt ?? 'unknown'}`,
+          `Updated             ${selectedSession.updatedAt ?? 'unknown'}`,
+          `Duration            ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,
+          `Title Source        ${selectedSession.displayTitle.source}`,
+          ...(selectedSession.provider ? [`Provider            ${selectedSession.provider.toUpperCase()}`] : []),
         ], mainWidth - 4));
 
         currentLines.push('');
         const token = selectedSession.token.last ?? selectedSession.token.total;
-        currentLines.push(...formatCard('TOKEN USAGE', c.yellow, [
-          `Total Tokens   ${formatNumber(token?.totalTokens)}`,
-          `Cached Input   ${formatNumber(token?.cachedInputTokens)}`,
+        currentLines.push(...formatCard('TOKEN METRICS', c.yellow, [
+          `Total Tokens        ${formatNumber(token?.totalTokens)} (${formatCompactTokens(token?.totalTokens)})`,
+          `Cached Input        ${formatNumber(token?.cachedInputTokens)}`,
+          `Output Tokens       ${formatNumber(token?.outputTokens)}`,
+          `Reasoning Tokens    ${formatNumber(token?.reasoningOutputTokens)}`,
         ], mainWidth - 4));
 
         currentLines.push('');
-        currentLines.push(...formatCard('EXECUTION & TASKS', c.purple, [
-          `Tool Calls     ${selectedSession.tools.calls} calls (${selectedSession.tools.outputs} outputs)`,
-          `Task Status    ${selectedSession.taskCount} started · ${selectedSession.completedTaskCount} completed · ${selectedSession.abortedTaskCount} aborted`,
-          `Compactions    ${selectedSession.compactionCount} compactions · ${selectedSession.rollbackCount} rollbacks`,
+        const subCount = getSubagentCount(selectedSession);
+        currentLines.push(...formatCard('EXECUTION & SUBAGENTS FLEET', c.purple, [
+          `Subagents Fleet     ${subCount > 0 ? `${subCount} spawned` : 'none'}`,
+          `Tool Calls          ${selectedSession.tools.calls} calls (${selectedSession.tools.outputs} outputs)`,
+          `Task Status         ${selectedSession.taskCount} started · ${selectedSession.completedTaskCount} completed · ${selectedSession.abortedTaskCount} aborted`,
+          `Compactions         ${selectedSession.compactionCount} compactions · ${selectedSession.rollbackCount} rollbacks`,
         ], mainWidth - 4));
 
         if (currentDetail) {
           const stats = computeUsageStats(currentDetail);
           const profile = computeToolUsageProfile(currentDetail);
           currentLines.push('');
-          currentLines.push(...formatCard('CONTEXT EFFICIENCY & EDITS', c.emerald, [
+          currentLines.push(...formatCard('CONTEXT EFFICIENCY & CODE EDITS', c.emerald, [
             `Context Meter       ${progressBar(stats.saturationPct, 16)}`,
             `Cache Hit Ratio     ${stats.cacheHitRatio}%`,
             `Reasoning Ratio     ${stats.reasoningRatio}%`,
@@ -497,7 +547,11 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         } else if (!currentDetail || !currentDetail.conversation.length) {
           currentLines.push(c.dim('No conversation activity records found.'));
         } else {
-          const filterLabel = roleFilter === 'agent' ? 'CODEX AGENT' : roleFilter.toUpperCase();
+          const filterLabel = roleFilter === 'agent'
+            ? 'CODEX AGENT'
+            : roleFilter === 'subagent'
+              ? 'SUBAGENTS'
+              : roleFilter.toUpperCase();
           currentLines.push(c.brightCyan(c.bold(`CONVERSATION & ACTIVITY TIMELINE`)) + c.gray(`  [ FILTER: ${filterLabel} · Press 'r' to cycle ]`));
           currentLines.push('');
 
@@ -505,6 +559,11 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           if (roleFilter === 'user') conversationList = conversationList.filter((m) => m.role === 'user' && m.kind !== 'internal_review');
           else if (roleFilter === 'agent') conversationList = conversationList.filter((m) => m.role === 'assistant');
           else if (roleFilter === 'review') conversationList = conversationList.filter((m) => m.kind === 'internal_review');
+          else if (roleFilter === 'subagent') {
+            conversationList = conversationList.filter((m) =>
+              m.activity?.tools.some((t) => t.kind === 'subagent' || t.name.toLowerCase().includes('subagent') || t.name.toLowerCase().includes('agent'))
+            );
+          }
 
           if (conversationList.length === 0) {
             currentLines.push(c.dim(`No messages match the active role filter [${filterLabel}].`));
@@ -546,7 +605,9 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
                   cardLines.push(c.purple(`⚡ Tools Executed (${item.activity.tools.length}):`));
                   for (const tool of item.activity.tools) {
                     const durStr = tool.durationMs ? `${tool.durationMs}ms` : 'exec';
-                    cardLines.push(`  • ${tool.name} (${durStr})`);
+                    const isSub = tool.kind === 'subagent' || tool.name.toLowerCase().includes('subagent');
+                    const prefix = isSub ? '🤖 [SUBAGENT] ' : '• ';
+                    cardLines.push(`  ${prefix}${tool.name} (${durStr})`);
                   }
                 }
 
@@ -629,7 +690,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         }
 
       } else if (activeTab === 3) {
-        // TOOLS TAB (TOOL EXECUTIONS & FILE PATCHES)
+        // TOOLS TAB (TOOL EXECUTIONS & DETAILS)
         if (loadingDetail) {
           currentLines.push(c.yellow('⚡ Loading tool executions...'));
         } else if (!currentDetail) {
@@ -662,6 +723,122 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         }
 
       } else if (activeTab === 4) {
+        // CHANGES / DIFFS TAB
+        if (loadingDetail) {
+          currentLines.push(c.yellow('⚡ Loading file changes and diffs...'));
+        } else if (!currentDetail) {
+          currentLines.push(c.dim('No session detail loaded for changes.'));
+        } else {
+          currentLines.push(c.emerald(c.bold('✏️ FILE CHANGES & CODE PATCHES')));
+          currentLines.push('');
+
+          const allEdits = currentDetail.conversation.flatMap((m) => m.activity?.edits ?? []);
+          const fileDiffsMap = new Map<string, { path: string; operation?: string; diffs: string[] }>();
+
+          for (const edit of allEdits) {
+            for (const f of edit.files) {
+              const existing = fileDiffsMap.get(f.path) ?? { path: f.path, operation: f.operation, diffs: [] };
+              if (f.diff) existing.diffs.push(f.diff);
+              if (f.operation) existing.operation = f.operation;
+              fileDiffsMap.set(f.path, existing);
+            }
+          }
+
+          if (fileDiffsMap.size === 0) {
+            currentLines.push(c.dim('No file edits or code patches recorded in this session.'));
+          } else {
+            currentLines.push(c.yellow(`Modified Files: ${fileDiffsMap.size} files across ${allEdits.length} edit operations`));
+            currentLines.push('');
+
+            for (const [filePath, info] of fileDiffsMap.entries()) {
+              const op = info.operation ? `[${info.operation.toUpperCase()}] ` : '';
+              const title = `📄 ${op}${filePath}`;
+              const diffLines: string[] = [];
+
+              if (info.diffs.length === 0) {
+                diffLines.push(c.dim('(File modified without unified diff snippet recorded)'));
+              } else {
+                for (const rawDiff of info.diffs) {
+                  const lines = rawDiff.split('\n');
+                  for (const l of lines) {
+                    if (l.startsWith('+')) {
+                      diffLines.push(c.emerald(l));
+                    } else if (l.startsWith('-')) {
+                      diffLines.push(c.red(l));
+                    } else if (l.startsWith('@@')) {
+                      diffLines.push(c.cyan(l));
+                    } else {
+                      diffLines.push(c.gray(l));
+                    }
+                  }
+                  diffLines.push('');
+                }
+              }
+
+              currentLines.push(...formatCard(title, c.emerald, diffLines, mainWidth - 4));
+              currentLines.push('');
+            }
+          }
+        }
+
+      } else if (activeTab === 5) {
+        // SUBAGENTS TAB
+        currentLines.push(c.purple(c.bold('🤖 SUBAGENTS FLEET HIERARCHY')));
+        currentLines.push('');
+
+        const subagents = (selectedSession.relationships ?? []).filter((r) => r.type === 'subagent');
+        const parents = (selectedSession.relationships ?? []).filter((r) => r.type === 'parent');
+
+        const relLines: string[] = [];
+        if (parents.length > 0) {
+          relLines.push(c.bold('Parent Session:'));
+          for (const p of parents) {
+            relLines.push(`  ⬆️ ${p.sessionId}`);
+          }
+          relLines.push('');
+        }
+
+        if (subagents.length > 0) {
+          relLines.push(c.bold(`Spawned Subagents (${subagents.length}):`));
+          for (const sub of subagents) {
+            relLines.push(`  🤖 Subagent ID: ${sub.sessionId}`);
+          }
+          relLines.push('');
+        }
+
+        const subEventsCount =
+          (selectedSession.eventCounts?.['sub_agent_activity'] ?? 0) +
+          (selectedSession.eventCounts?.['subagent_activity'] ?? 0) +
+          (selectedSession.eventCounts?.['agent_activity'] ?? 0);
+
+        relLines.push(`Subagent Activity Events: ${subEventsCount}`);
+
+        currentLines.push(...formatCard('FLEET TOPOLOGY & COUNTS', c.purple, relLines, mainWidth - 4));
+        currentLines.push('');
+
+        if (currentDetail) {
+          const subagentTools: string[] = [];
+          for (const m of currentDetail.conversation) {
+            if (m.activity?.tools) {
+              for (const t of m.activity.tools) {
+                if (t.kind === 'subagent' || t.name.toLowerCase().includes('subagent') || t.name.toLowerCase().includes('agent')) {
+                  subagentTools.push(`• ${t.name} (${t.durationMs ? `${t.durationMs}ms` : 'exec'})`);
+                  if (t.input) subagentTools.push(`  Input: ${sanitize(t.input).slice(0, 120)}`);
+                  if (t.output) subagentTools.push(`  Result: ${sanitize(t.output).slice(0, 120)}`);
+                  subagentTools.push('');
+                }
+              }
+            }
+          }
+
+          if (subagentTools.length > 0) {
+            currentLines.push(...formatCard('SUBAGENT ACTIVITY TRANSCRIPT', c.cyan, subagentTools, mainWidth - 4));
+          } else {
+            currentLines.push(c.dim('No dedicated subagent tool invocations in conversation.'));
+          }
+        }
+
+      } else if (activeTab === 6) {
         // METADATA TAB
         currentLines.push(c.gray('RAW SESSION INVENTORY METADATA:'));
         currentLines.push('');
@@ -687,8 +864,8 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       buffer.push(move(rows, 1) + '\x1b[K' + c.bgNotice(` ${notificationMessage} `.padEnd(cols - 1).slice(0, cols)));
     } else {
       const statusHelp = activePane === 'sidebar'
-        ? ` [TAB/→] Main Pane | [↑/↓] Select Session | [1-5] Tabs | [/] Search | [e] Export | [c] Copy ID | [q] Exit`
-        : ` [TAB] Sidebar | [←/→] Tabs | [↑/↓] Scroll | [1-5] Jump Tab | [r] Role Filter | [e] Export | [q] Exit`;
+        ? ` [TAB/→] Main Pane | [↑/↓] Select Session | [1-7] Tabs | [/] Search | [p] Project | [e] Export | [c] Copy ID | [q] Exit`
+        : ` [TAB] Sidebar | [←/→] Tabs | [↑/↓] Scroll | [1-7] Jump Tab | [r] Role Filter | [p] Project | [e] Export | [q] Exit`;
       const footerText = isSearching
         ? ` TYPE FILTER · [ENTER] Save · [ESC] Clear filter`
         : statusHelp;
@@ -732,6 +909,31 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       return;
     }
 
+    // Toggle / Cycle Project Filter with 'p'
+    if (str === 'p') {
+      if (allProjects.length === 0) {
+        notify('No named projects found in session inventory.');
+      } else if (!selectedProjectFilter) {
+        selectedProjectFilter = allProjects[0];
+        notify(`Filtered by Project: ${selectedProjectFilter}`);
+      } else {
+        const curIdx = allProjects.indexOf(selectedProjectFilter);
+        if (curIdx >= 0 && curIdx < allProjects.length - 1) {
+          selectedProjectFilter = allProjects[curIdx + 1];
+          notify(`Filtered by Project: ${selectedProjectFilter}`);
+        } else {
+          selectedProjectFilter = null;
+          notify('Cleared Project Filter (showing all sessions)');
+        }
+      }
+      selectedIndex = 0;
+      scrollOffset = 0;
+      const newFiltered = getFilteredSessions();
+      if (newFiltered[0]) loadDetail(newFiltered[0]);
+      render();
+      return;
+    }
+
     if (str === 'e' && currentDetail) {
       try {
         const file = exportSessionJson(currentDetail);
@@ -748,7 +950,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     }
 
     if ((str === 'r' || str === 'f') && activeTab === 1) {
-      const filters: Array<'all' | 'user' | 'agent' | 'review'> = ['all', 'user', 'agent', 'review'];
+      const filters: Array<'all' | 'user' | 'agent' | 'review' | 'subagent'> = ['all', 'user', 'agent', 'review', 'subagent'];
       const nextIdx = (filters.indexOf(roleFilter) + 1) % filters.length;
       roleFilter = filters[nextIdx];
       rightScrollOffset = 0;
@@ -775,7 +977,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     } else {
       // Main Content Focus Controls
       if (key.name === 'right' || str === 'l') {
-        if (activeTab < 4) {
+        if (activeTab < 6) {
           activeTab++;
           rightScrollOffset = 0;
         }
@@ -820,6 +1022,12 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     } else if (str === '5') {
       activeTab = 4;
       rightScrollOffset = 0;
+    } else if (str === '6') {
+      activeTab = 5;
+      rightScrollOffset = 0;
+    } else if (str === '7') {
+      activeTab = 6;
+      rightScrollOffset = 0;
     }
 
     render();
@@ -837,7 +1045,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const isPress = mouseMatch[4] === 'M';
 
     const cols = process.stdout.columns || 100;
-    const sidebarWidth = Math.min(42, Math.max(30, Math.floor(cols * 0.36)));
+    const sidebarWidth = Math.min(46, Math.max(32, Math.floor(cols * 0.36)));
 
     if (btn === 64) { // Scroll Up
       if (x <= sidebarWidth) {
@@ -875,7 +1083,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       } else if (x > sidebarWidth) {
         activePane = 'main';
         if (y === 2) { // Click Tab Header
-          const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Metadata '];
+          const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Changes ', ' Subagents ', ' Metadata '];
           let currentX = sidebarWidth + 3;
           let clickedTab = -1;
           for (let i = 0; i < tabLabels.length; i++) {
