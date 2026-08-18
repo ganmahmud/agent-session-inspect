@@ -549,8 +549,10 @@
 						{#if pName}
 							<a
 								href={resolve('/project/[name]', { name: encodeURIComponent(pName) })}
-								class="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400 no-underline transition-all hover:bg-indigo-500/20 hover:border-indigo-400 hover:scale-102"
-								title={detail.cwd ? `Project: ${pName}\nLocation: ${detail.cwd}\nClick to view Project Overview` : `Project: ${pName}\nClick to view Project Overview`}
+								class="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400 no-underline transition-all hover:scale-102 hover:border-indigo-400 hover:bg-indigo-500/20"
+								title={detail.cwd
+									? `Project: ${pName}\nLocation: ${detail.cwd}\nClick to view Project Overview`
+									: `Project: ${pName}\nClick to view Project Overview`}
 							>
 								<FolderGit2 class="h-3 w-3 text-indigo-400" />
 								<span>{pName}</span>

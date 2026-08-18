@@ -1,9 +1,33 @@
 import { marked } from 'marked';
 
 const ALLOWED_TAGS = new Set([
-	'A', 'BLOCKQUOTE', 'BR', 'CODE', 'DEL', 'EM', 'H1', 'H2', 'H3', 'HR',
-	'LI', 'OL', 'P', 'PRE', 'STRONG', 'UL', 'SPAN', 'DIV', 'TABLE', 'THEAD',
-	'TBODY', 'TR', 'TH', 'TD', 'INPUT', 'DETAILS', 'SUMMARY'
+	'A',
+	'BLOCKQUOTE',
+	'BR',
+	'CODE',
+	'DEL',
+	'EM',
+	'H1',
+	'H2',
+	'H3',
+	'HR',
+	'LI',
+	'OL',
+	'P',
+	'PRE',
+	'STRONG',
+	'UL',
+	'SPAN',
+	'DIV',
+	'TABLE',
+	'THEAD',
+	'TBODY',
+	'TR',
+	'TH',
+	'TD',
+	'INPUT',
+	'DETAILS',
+	'SUMMARY'
 ]);
 
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
@@ -22,12 +46,19 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 function cleanNode(node: Node) {
 	const children = Array.from(node.childNodes);
 	for (const child of children) {
-		if (child.nodeType === 1) { // Element node
+		if (child.nodeType === 1) {
+			// Element node
 			const el = child as HTMLElement;
 			const tag = el.tagName.toUpperCase();
 
 			if (!ALLOWED_TAGS.has(tag)) {
-				if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'IFRAME' || tag === 'OBJECT' || tag === 'EMBED') {
+				if (
+					tag === 'SCRIPT' ||
+					tag === 'STYLE' ||
+					tag === 'IFRAME' ||
+					tag === 'OBJECT' ||
+					tag === 'EMBED'
+				) {
 					el.remove();
 				} else {
 					const fragment = document.createDocumentFragment();
@@ -57,14 +88,19 @@ function cleanNode(node: Node) {
 
 				if (attrName === 'href') {
 					const val = attr.value.trim().toLowerCase();
-					if (val.startsWith('javascript:') || val.startsWith('vbscript:') || val.startsWith('data:')) {
+					if (
+						val.startsWith('javascript:') ||
+						val.startsWith('vbscript:') ||
+						val.startsWith('data:')
+					) {
 						el.removeAttribute(attr.name);
 					}
 				}
 			}
 
 			cleanNode(el);
-		} else if (child.nodeType === 8) { // Comment node
+		} else if (child.nodeType === 8) {
+			// Comment node
 			child.remove();
 		}
 	}
@@ -126,29 +162,31 @@ export function renderMarkdown(value: string): string {
 
 export function toPlainText(markdown: string): string {
 	if (!markdown) return '';
-	return markdown
-		// Remove code block wrappers but keep contents
-		.replace(/```[a-z]*\n([\s\S]*?)\n```/gi, '$1')
-		// Remove inline code ticks
-		.replace(/`([^`]+)`/g, '$1')
-		// Remove images ![alt](url) -> alt
-		.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-		// Remove links [text](url) -> text
-		.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-		// Remove bold/italic markers (*, _, ~~)
-		.replace(/(\*\*|__|\*|_|~~)(.*?)\1/g, '$2')
-		// Remove headers (# Header)
-		.replace(/^#{1,6}\s+/gm, '')
-		// Remove blockquotes (> Quote)
-		.replace(/^>\s+/gm, '')
-		// Remove list bullets (- item, * item, 1. item)
-		.replace(/^[\s]*[-*+]\s+/gm, '')
-		.replace(/^[\s]*\d+\.\s+/gm, '')
-		// Remove horizontal rules
-		.replace(/^[-*_]{3,}\s*$/gm, '')
-		// Clean up excessive blank lines
-		.replace(/\n{3,}/g, '\n\n')
-		.trim();
+	return (
+		markdown
+			// Remove code block wrappers but keep contents
+			.replace(/```[a-z]*\n([\s\S]*?)\n```/gi, '$1')
+			// Remove inline code ticks
+			.replace(/`([^`]+)`/g, '$1')
+			// Remove images ![alt](url) -> alt
+			.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+			// Remove links [text](url) -> text
+			.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+			// Remove bold/italic markers (*, _, ~~)
+			.replace(/(\*\*|__|\*|_|~~)(.*?)\1/g, '$2')
+			// Remove headers (# Header)
+			.replace(/^#{1,6}\s+/gm, '')
+			// Remove blockquotes (> Quote)
+			.replace(/^>\s+/gm, '')
+			// Remove list bullets (- item, * item, 1. item)
+			.replace(/^[\s]*[-*+]\s+/gm, '')
+			.replace(/^[\s]*\d+\.\s+/gm, '')
+			// Remove horizontal rules
+			.replace(/^[-*_]{3,}\s*$/gm, '')
+			// Clean up excessive blank lines
+			.replace(/\n{3,}/g, '\n\n')
+			.trim()
+	);
 }
 
 /**
@@ -162,5 +200,3 @@ export function markdown(node: HTMLElement, value: string) {
 		}
 	};
 }
-
-

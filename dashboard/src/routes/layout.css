@@ -78,7 +78,14 @@
 html {
 	background: var(--canvas);
 	color: var(--ink);
-	font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	font-family:
+		'Plus Jakarta Sans',
+		system-ui,
+		-apple-system,
+		BlinkMacSystemFont,
+		'Segoe UI',
+		Roboto,
+		sans-serif;
 	font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 	-webkit-font-smoothing: antialiased;
 }
@@ -104,7 +111,8 @@ body {
 	background: var(--muted);
 }
 
-button, input {
+button,
+input {
 	font: inherit;
 }
 
@@ -150,7 +158,9 @@ button, input {
 	background: var(--field);
 	font-size: 13px;
 	outline: none;
-	transition: border-color 0.2s ease, box-shadow 0.2s ease;
+	transition:
+		border-color 0.2s ease,
+		box-shadow 0.2s ease;
 }
 .session-filter:focus {
 	border-color: var(--accent);
@@ -167,7 +177,9 @@ button, input {
 	background: transparent;
 	cursor: pointer;
 	text-align: left;
-	transition: background 0.15s ease, border-color 0.15s ease;
+	transition:
+		background 0.15s ease,
+		border-color 0.15s ease;
 }
 .session-row:hover {
 	background: var(--panel-subtle);
@@ -266,7 +278,9 @@ button, input {
 	cursor: pointer;
 	font-size: 14px;
 	font-weight: 500;
-	transition: color 0.15s ease, border-color 0.15s ease;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease;
 }
 .tab-btn:hover {
 	color: var(--ink);
@@ -417,13 +431,19 @@ button, input {
 
 /* Selected Card Highlight - Zero Layout Shift Outward Outline & Smooth Internal Transition */
 .chat-card {
-	transition: outline 0.15s ease, outline-offset 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+	transition:
+		outline 0.15s ease,
+		outline-offset 0.15s ease,
+		box-shadow 0.15s ease,
+		background-color 0.15s ease;
 }
 
 .chat-card.selected-card {
 	outline: 2px solid #6366f1 !important;
 	outline-offset: 10px !important;
-	box-shadow: 0 0 0 10px rgba(99, 102, 241, 0.12), 0 6px 24px rgba(99, 102, 241, 0.25) !important;
+	box-shadow:
+		0 0 0 10px rgba(99, 102, 241, 0.12),
+		0 6px 24px rgba(99, 102, 241, 0.25) !important;
 }
 
 .chat-card.from-user.selected-card {
@@ -528,24 +548,38 @@ button, input {
 .markdown > :last-child {
 	margin-bottom: 0;
 }
-.markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table {
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown table {
 	margin: 0 0 12px;
 }
-.markdown ul, .markdown ol {
+.markdown ul,
+.markdown ol {
 	padding-left: 20px;
 }
 .markdown li {
 	margin-bottom: 4px;
 }
-.markdown h1, .markdown h2, .markdown h3, .markdown h4 {
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
 	margin: 18px 0 8px;
 	font-weight: 600;
 	line-height: 1.35;
 	color: var(--ink);
 }
-.markdown h1 { font-size: 1.25em; }
-.markdown h2 { font-size: 1.15em; }
-.markdown h3 { font-size: 1.05em; }
+.markdown h1 {
+	font-size: 1.25em;
+}
+.markdown h2 {
+	font-size: 1.15em;
+}
+.markdown h3 {
+	font-size: 1.05em;
+}
 
 .markdown a {
 	color: var(--ink);
@@ -564,7 +598,9 @@ button, input {
 	padding: 2px 6px;
 	background: var(--field);
 	color: var(--ink);
-	font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+	font-family:
+		ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+		monospace;
 	font-size: 0.88em;
 }
 .markdown pre {
@@ -664,7 +700,9 @@ button, input {
 	list-style: none;
 	user-select: none;
 }
-.tool-item > summary::-webkit-details-marker { display: none; }
+.tool-item > summary::-webkit-details-marker {
+	display: none;
+}
 .tool-item pre {
 	margin: 6px 12px 12px;
 	padding: 10px;
@@ -676,8 +714,12 @@ button, input {
 }
 
 /* Diff formatting */
-.diff-added { color: var(--success); }
-.diff-removed { color: var(--danger); }
+.diff-added {
+	color: var(--success);
+}
+.diff-removed {
+	color: var(--danger);
+}
 .diff-badge-added {
 	background: rgba(74, 222, 128, 0.15);
 	color: #4ade80;
@@ -738,7 +780,8 @@ table {
 	border-collapse: collapse;
 	font-size: 12px;
 }
-th, td {
+th,
+td {
 	padding: 9px 12px;
 	border-bottom: 1px solid var(--line);
 	text-align: left;
@@ -805,7 +848,8 @@ tr:hover td {
 
 /* Skeleton Loaders */
 @keyframes skeleton-pulse {
-	0%, 100% {
+	0%,
+	100% {
 		opacity: 0.35;
 	}
 	50% {
@@ -948,8 +992,14 @@ tr:hover td {
 	animation: import-error-in 0.3s ease;
 }
 @keyframes import-error-in {
-	from { opacity: 0; transform: translateY(-4px); }
-	to { opacity: 1; transform: translateY(0); }
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 /* Export toast feedback */
@@ -960,8 +1010,14 @@ tr:hover td {
 	animation: export-toast-in 0.25s ease;
 }
 @keyframes export-toast-in {
-	from { opacity: 0; transform: scale(0.9); }
-	to { opacity: 1; transform: scale(1); }
+	from {
+		opacity: 0;
+		transform: scale(0.9);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1);
+	}
 }
 
 /* Message-level export button (appears on hover) */
@@ -998,7 +1054,9 @@ tr:hover td {
 	animation: import-spin 0.6s linear infinite;
 }
 @keyframes import-spin {
-	to { transform: rotate(360deg); }
+	to {
+		transform: rotate(360deg);
+	}
 }
 
 /* ==========================================================================
@@ -1027,29 +1085,13 @@ tr:hover td {
 	inset: 0;
 	background: 
 		/* Upper violet ambient backlight flare */
-		radial-gradient(
-			circle at 30% 20%,
-			rgba(137, 87, 229, 0.22),
-			transparent 50%
-		),
+		radial-gradient(circle at 30% 20%, rgba(137, 87, 229, 0.22), transparent 50%),
 		/* Upper cyan ambient backlight flare */
-		radial-gradient(
-			circle at 70% 18%,
-			rgba(56, 189, 248, 0.18),
-			transparent 50%
-		),
+		radial-gradient(circle at 70% 18%, rgba(56, 189, 248, 0.18), transparent 50%),
 		/* Deep indigo center glow */
-		radial-gradient(
-			circle at 50% 35%,
-			rgba(99, 102, 241, 0.16),
-			transparent 60%
-		),
+		radial-gradient(circle at 50% 35%, rgba(99, 102, 241, 0.16), transparent 60%),
 		/* Emerald bottom accent flare */
-		radial-gradient(
-			circle at 50% 80%,
-			rgba(34, 197, 94, 0.12),
-			transparent 55%
-		);
+		radial-gradient(circle at 50% 80%, rgba(34, 197, 94, 0.12), transparent 55%);
 	filter: blur(70px);
 }
 
@@ -1060,21 +1102,10 @@ tr:hover td {
 	left: 0;
 	right: 0;
 	height: 650px;
-	background-image: radial-gradient(
-		rgba(255, 255, 255, 0.12) 1.2px,
-		transparent 1.2px
-	);
+	background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1.2px, transparent 1.2px);
 	background-size: 24px 24px;
-	mask-image: radial-gradient(
-		ellipse 85% 60% at 50% 0%,
-		#000 65%,
-		transparent 100%
-	);
-	-webkit-mask-image: radial-gradient(
-		ellipse 85% 60% at 50% 0%,
-		#000 65%,
-		transparent 100%
-	);
+	mask-image: radial-gradient(ellipse 85% 60% at 50% 0%, #000 65%, transparent 100%);
+	-webkit-mask-image: radial-gradient(ellipse 85% 60% at 50% 0%, #000 65%, transparent 100%);
 	pointer-events: none;
 	z-index: 0;
 	opacity: 0.55;
@@ -1083,29 +1114,14 @@ tr:hover td {
 
 /* Light mode adjustments for backlight flares */
 :root:not(.dark) .github-backlight-fixed::before {
-	background: 
-		radial-gradient(
-			circle at 30% 20%,
-			rgba(137, 87, 229, 0.14),
-			transparent 50%
-		),
-		radial-gradient(
-			circle at 70% 18%,
-			rgba(56, 189, 248, 0.12),
-			transparent 50%
-		),
-		radial-gradient(
-			circle at 50% 35%,
-			rgba(168, 85, 247, 0.1),
-			transparent 60%
-		);
+	background:
+		radial-gradient(circle at 30% 20%, rgba(137, 87, 229, 0.14), transparent 50%),
+		radial-gradient(circle at 70% 18%, rgba(56, 189, 248, 0.12), transparent 50%),
+		radial-gradient(circle at 50% 35%, rgba(168, 85, 247, 0.1), transparent 60%);
 	filter: blur(80px);
 }
 :root:not(.dark) .github-grid-backdrop-fixed {
-	background-image: radial-gradient(
-		rgba(15, 23, 42, 0.09) 1.2px,
-		transparent 1.2px
-	);
+	background-image: radial-gradient(rgba(15, 23, 42, 0.09) 1.2px, transparent 1.2px);
 	opacity: 0.75;
 }
 
@@ -1129,8 +1145,8 @@ tr:hover td {
 }
 
 /* Disable Ambient Background Backlight & Grid when data-backlight="false" */
-html[data-backlight="false"] .github-backlight-fixed,
-html[data-backlight="false"] .github-grid-backdrop-fixed {
+html[data-backlight='false'] .github-backlight-fixed,
+html[data-backlight='false'] .github-grid-backdrop-fixed {
 	opacity: 0 !important;
 	pointer-events: none !important;
 }
@@ -1189,37 +1205,37 @@ html[data-backlight="false"] .github-grid-backdrop-fixed {
 }
 
 /* Light Theme Syntax Adjustments */
-html[data-theme="light"] .syn-kwd {
+html[data-theme='light'] .syn-kwd {
 	color: #9333ea;
 }
-html[data-theme="light"] .syn-str {
+html[data-theme='light'] .syn-str {
 	color: #059669;
 }
-html[data-theme="light"] .syn-num {
+html[data-theme='light'] .syn-num {
 	color: #d97706;
 }
-html[data-theme="light"] .syn-lit {
+html[data-theme='light'] .syn-lit {
 	color: #db2777;
 }
-html[data-theme="light"] .syn-typ {
+html[data-theme='light'] .syn-typ {
 	color: #0284c7;
 }
-html[data-theme="light"] .syn-fn {
+html[data-theme='light'] .syn-fn {
 	color: #b45309;
 }
-html[data-theme="light"] .syn-cmt {
+html[data-theme='light'] .syn-cmt {
 	color: #64748b;
 }
-html[data-theme="light"] .syn-op {
+html[data-theme='light'] .syn-op {
 	color: #e11d48;
 }
-html[data-theme="light"] .syn-tag {
+html[data-theme='light'] .syn-tag {
 	color: #dc2626;
 }
-html[data-theme="light"] .syn-attr {
+html[data-theme='light'] .syn-attr {
 	color: #7c3aed;
 }
-html[data-theme="light"] .syn-prop {
+html[data-theme='light'] .syn-prop {
 	color: #2563eb;
 }
 /* ==========================================================================
@@ -1385,27 +1401,21 @@ tr.diff-row-meta {
 }
 
 /* Light Mode specific diff contrast */
-html[data-theme="light"] .diff-row.diff-row-add,
-html[data-theme="light"] tr.diff-row-add {
+html[data-theme='light'] .diff-row.diff-row-add,
+html[data-theme='light'] tr.diff-row-add {
 	background: rgba(34, 197, 94, 0.2) !important;
 	color: #15803d !important;
 }
-html[data-theme="light"] .diff-row.diff-row-add .diff-line-content pre,
-html[data-theme="light"] tr.diff-row-add .diff-line-content pre {
+html[data-theme='light'] .diff-row.diff-row-add .diff-line-content pre,
+html[data-theme='light'] tr.diff-row-add .diff-line-content pre {
 	color: #166534 !important;
 }
-html[data-theme="light"] .diff-row.diff-row-del,
-html[data-theme="light"] tr.diff-row-del {
+html[data-theme='light'] .diff-row.diff-row-del,
+html[data-theme='light'] tr.diff-row-del {
 	background: rgba(239, 68, 68, 0.2) !important;
 	color: #b91c1c !important;
 }
-html[data-theme="light"] .diff-row.diff-row-del .diff-line-content pre,
-html[data-theme="light"] tr.diff-row-del .diff-line-content pre {
+html[data-theme='light'] .diff-row.diff-row-del .diff-line-content pre,
+html[data-theme='light'] tr.diff-row-del .diff-line-content pre {
 	color: #991b1b !important;
 }
-
-
-
-
-
-

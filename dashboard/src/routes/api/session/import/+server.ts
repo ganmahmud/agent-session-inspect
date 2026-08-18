@@ -56,7 +56,8 @@ export async function POST({ request }) {
 	// Single message import — wrap into minimal SessionDetail
 	if (envelope.message && envelope.message.id && envelope.message.text) {
 		const msg = envelope.message;
-		const cleanHash = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
+		const cleanHash =
+			Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
 		const syntheticId = `imp-msg-${cleanHash}`;
 		const roleLabel = msg.role === 'assistant' ? 'Agent' : 'User';
 		const titleText = envelope.sessionTitle
@@ -70,7 +71,11 @@ export async function POST({ request }) {
 
 		if (activity?.modelRequests?.length) {
 			for (const req of activity.modelRequests) {
-				const u = (req.usage || req) as { totalTokens?: number; inputTokens?: number; outputTokens?: number };
+				const u = (req.usage || req) as {
+					totalTokens?: number;
+					inputTokens?: number;
+					outputTokens?: number;
+				};
 				totalTokens += u.totalTokens ?? 0;
 				inputTokens += u.inputTokens ?? 0;
 				outputTokens += u.outputTokens ?? 0;
@@ -115,20 +120,28 @@ export async function POST({ request }) {
 				}
 			],
 			usage: {
-				latest: totalTokens > 0 ? {
-					id: `snap-${cleanHash}`,
-					timestamp: msg.timestamp,
-					usage: { totalTokens, inputTokens, outputTokens },
-					source: { file: 'imported', line: 0 },
-					evidence: 'reported_snapshot'
-				} : undefined,
-				snapshots: totalTokens > 0 ? [{
-					id: `snap-${cleanHash}`,
-					timestamp: msg.timestamp,
-					usage: { totalTokens, inputTokens, outputTokens },
-					source: { file: 'imported', line: 0 },
-					evidence: 'reported_snapshot'
-				}] : [],
+				latest:
+					totalTokens > 0
+						? {
+								id: `snap-${cleanHash}`,
+								timestamp: msg.timestamp,
+								usage: { totalTokens, inputTokens, outputTokens },
+								source: { file: 'imported', line: 0 },
+								evidence: 'reported_snapshot'
+							}
+						: undefined,
+				snapshots:
+					totalTokens > 0
+						? [
+								{
+									id: `snap-${cleanHash}`,
+									timestamp: msg.timestamp,
+									usage: { totalTokens, inputTokens, outputTokens },
+									source: { file: 'imported', line: 0 },
+									evidence: 'reported_snapshot'
+								}
+							]
+						: [],
 				modelStepTotal: { totalTokens, inputTokens, outputTokens },
 				modelStepCount: activity?.modelRequests?.length ?? (totalTokens > 0 ? 1 : 0),
 				evidence: 'reported_snapshot'

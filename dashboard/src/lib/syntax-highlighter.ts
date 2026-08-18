@@ -107,7 +107,10 @@ const JS_TS_RULES: Rule[] = [
 	{ pattern: /\b([A-Z][a-zA-Z0-9_$]*)\b/g, cls: 'syn-typ' },
 	{ pattern: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g, cls: 'syn-fn' },
 	{ pattern: /\b0x[a-fA-F0-9]+\b|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, cls: 'syn-num' },
-	{ pattern: /(=>|===|!==|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|&|\||\^|~|<<|>>|\?|:)/g, cls: 'syn-op' }
+	{
+		pattern: /(=>|===|!==|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|&|\||\^|~|<<|>>|\?|:)/g,
+		cls: 'syn-op'
+	}
 ];
 
 const JSON_RULES: Rule[] = [
@@ -136,7 +139,11 @@ const CSS_RULES: Rule[] = [
 	{ pattern: /\b[a-zA-Z-]+(?=\s*:)/g, cls: 'syn-prop' },
 	{ pattern: /#[a-fA-F0-9]{3,8}\b/g, cls: 'syn-num' },
 	{ pattern: /\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%|s|ms|deg|fr)\b/g, cls: 'syn-num' },
-	{ pattern: /\b(important|auto|inherit|initial|none|block|flex|grid|absolute|relative|fixed|sticky)\b/g, cls: 'syn-lit' }
+	{
+		pattern:
+			/\b(important|auto|inherit|initial|none|block|flex|grid|absolute|relative|fixed|sticky)\b/g,
+		cls: 'syn-lit'
+	}
 ];
 
 const PYTHON_RULES: Rule[] = [
@@ -200,7 +207,10 @@ const MARKDOWN_RULES: Rule[] = [
 	{ pattern: /^\s*\d+\.\s+/g, cls: 'syn-num' },
 	{ pattern: /^[a-zA-Z0-9_-]+(?=\s*:)/g, cls: 'syn-prop' },
 	{ pattern: /:\s*(.+)$/g, cls: 'syn-str' },
-	{ pattern: /\b(Draft|Approved|Pending|Active|Done|Closed|True|False|true|false|null)\b/gi, cls: 'syn-lit' },
+	{
+		pattern: /\b(Draft|Approved|Pending|Active|Done|Closed|True|False|true|false|null)\b/gi,
+		cls: 'syn-lit'
+	},
 	{ pattern: /\b\d{4}-\d{2}-\d{2}\b/g, cls: 'syn-num' }
 ];
 
@@ -274,7 +284,9 @@ export function highlightCodeLine(line: string, filePath?: string): string {
 			const start = m.index;
 			const end = start + m[0].length;
 			// Ignore if overlapping with an already matched range
-			const overlaps = matches.some((existing) => !(end <= existing.start || start >= existing.end));
+			const overlaps = matches.some(
+				(existing) => !(end <= existing.start || start >= existing.end)
+			);
 			if (!overlaps) {
 				matches.push({ start, end, cls: rule.cls, text: m[0] });
 			}

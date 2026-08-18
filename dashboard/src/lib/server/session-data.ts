@@ -2,7 +2,13 @@ import { join } from 'node:path';
 import { readCodexCatalog } from '../../../../src/catalog.ts';
 import { scanCodex } from '../../../../src/codex.ts';
 import { readCodexSessionDetail } from '../../../../src/detail.ts';
-import type { ScanResult, SessionDetail, SessionInventory, ReplyActivity, TokenSummary } from '../../../../src/types.ts';
+import type {
+	ScanResult,
+	SessionDetail,
+	SessionInventory,
+	ReplyActivity,
+	TokenSummary
+} from '../../../../src/types.ts';
 export type { SessionDetail, SessionInventory, ReplyActivity, TokenSummary };
 
 const codexHome = process.env.CODEX_HOME || join(process.env.HOME || '', '.codex');
@@ -25,7 +31,10 @@ export async function sessionInventory(): Promise<ScanResult> {
 	if (cached && Date.now() - cached.createdAt < INVENTORY_CACHE_TTL_MS) return cached.result;
 	try {
 		const catalog = readCodexCatalog(catalogPaths);
-		const result = await scanCodex(sessionPath, { catalogTitles: catalog.titles, catalogErrors: catalog.errors });
+		const result = await scanCodex(sessionPath, {
+			catalogTitles: catalog.titles,
+			catalogErrors: catalog.errors
+		});
 		cached = { createdAt: Date.now(), result };
 		return result;
 	} catch (err) {
@@ -42,7 +51,10 @@ export async function sessionInventory(): Promise<ScanResult> {
 	}
 }
 
-export async function sessionDetail(id: string, existingInventory?: ScanResult): Promise<SessionDetail | undefined> {
+export async function sessionDetail(
+	id: string,
+	existingInventory?: ScanResult
+): Promise<SessionDetail | undefined> {
 	// Check imported sessions first
 	const imported = importedSessions.get(id);
 	if (imported) return imported;
@@ -60,8 +72,9 @@ export async function sessionDetail(id: string, existingInventory?: ScanResult):
 		const detail = await readCodexSessionDetail(session);
 		if (detail) {
 			if (detailCache.size >= MAX_DETAIL_CACHE) {
-				const oldestKey = Array.from(detailCache.entries())
-					.sort((a, b) => a[1].accessedAt - b[1].accessedAt)[0]?.[0];
+				const oldestKey = Array.from(detailCache.entries()).sort(
+					(a, b) => a[1].accessedAt - b[1].accessedAt
+				)[0]?.[0];
 				if (oldestKey) detailCache.delete(oldestKey);
 			}
 			detailCache.set(id, { detail, accessedAt: Date.now() });
@@ -132,7 +145,11 @@ export async function getSessionSubagents(
 
 	// Inverse parent relationships (sessions pointing to this session as parent)
 	const childSessionIds = result.sessions
-		.filter((s) => s.relationships && s.relationships.some((r) => r.type === 'parent' && r.sessionId === session.id))
+		.filter(
+			(s) =>
+				s.relationships &&
+				s.relationships.some((r) => r.type === 'parent' && r.sessionId === session.id)
+		)
 		.map((s) => s.id);
 
 	const allSubagentIds = Array.from(new Set([...directSubagentIds, ...childSessionIds]));
@@ -151,7 +168,12 @@ export async function getSessionSubagents(
 					modelStepCount: 0,
 					evidence: 'reported_snapshot'
 				},
-				debug: { hiddenMessages: [], unattachedActivities: [], malformedRecords: 0, unknownRecords: 0 }
+				debug: {
+					hiddenMessages: [],
+					unattachedActivities: [],
+					malformedRecords: 0,
+					unknownRecords: 0
+				}
 			});
 		} else {
 			const imported = importedSessions.get(subId);
@@ -290,7 +312,12 @@ export async function getSessionSubagents(
 							},
 							tools: { calls: 1, outputs: 1, execCompleted: 0, mcpCompleted: 0 },
 							relationships: [{ type: 'parent', sessionId: session.id }],
-							debug: { hiddenMessages: [], unattachedActivities: [], malformedRecords: 0, unknownRecords: 0 }
+							debug: {
+								hiddenMessages: [],
+								unattachedActivities: [],
+								malformedRecords: 0,
+								unknownRecords: 0
+							}
 						});
 					}
 				}
@@ -300,4 +327,3 @@ export async function getSessionSubagents(
 
 	return subagentDetails;
 }
-

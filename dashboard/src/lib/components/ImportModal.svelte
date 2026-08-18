@@ -188,7 +188,7 @@
 			</div>
 
 			<!-- Tab Content Body -->
-			<div class="p-6 space-y-6">
+			<div class="space-y-6 p-6">
 				<!-- File Upload Dropzone -->
 				<div
 					class="relative flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 text-center transition-all {isDragging

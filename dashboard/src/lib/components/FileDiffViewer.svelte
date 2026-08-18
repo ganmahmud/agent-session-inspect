@@ -297,10 +297,7 @@
 						>
 							<div class="flex min-w-0 items-center gap-2 font-mono text-xs">
 								<FileCode class="h-4 w-4 shrink-0 text-emerald-400" />
-								<span
-									class="truncate font-bold text-(--ink)"
-									title={selectedFile.path}
-								>
+								<span class="truncate font-bold text-(--ink)" title={selectedFile.path}>
 									{selectedFile.path}
 								</span>
 								<span
@@ -391,8 +388,10 @@
 																<td class="diff-line-content">
 																	<pre
 																		class="m-0 bg-transparent p-0 font-mono text-xs whitespace-pre-wrap"
-																		use:highlight={{ code: line.content || ' ', path: selectedFile.path }}
-																	></pre>
+																		use:highlight={{
+																			code: line.content || ' ',
+																			path: selectedFile.path
+																		}}></pre>
 																</td>
 															</tr>
 														{/if}
@@ -404,7 +403,10 @@
 								{/each}
 							{:else if selectedFile.diffs.length}
 								<!-- Fallback for raw diff string if no hunks parsed -->
-								<pre class="m-0 bg-(--field) p-4 font-mono text-xs whitespace-pre-wrap text-(--ink)">{selectedFile.diffs.join('\n\n')}</pre>
+								<pre
+									class="m-0 bg-(--field) p-4 font-mono text-xs whitespace-pre-wrap text-(--ink)">{selectedFile.diffs.join(
+										'\n\n'
+									)}</pre>
 							{:else}
 								<div class="p-6 text-center text-xs text-(--muted)">
 									File was marked as modified, but no unified diff was captured.
@@ -515,8 +517,10 @@
 															<td class="diff-line-content">
 																<pre
 																	class="m-0 bg-transparent p-0 font-mono text-xs whitespace-pre-wrap"
-																	use:highlight={{ code: line.content || ' ', path: file.path }}
-																></pre>
+																	use:highlight={{
+																		code: line.content || ' ',
+																		path: file.path
+																	}}></pre>
 															</td>
 														</tr>
 													{/if}
@@ -527,7 +531,10 @@
 								{/each}
 							{/each}
 						{:else if file.diffs.length}
-							<pre class="m-0 bg-(--field) p-4 font-mono text-xs whitespace-pre-wrap text-(--ink)">{file.diffs.join('\n\n')}</pre>
+							<pre
+								class="m-0 bg-(--field) p-4 font-mono text-xs whitespace-pre-wrap text-(--ink)">{file.diffs.join(
+									'\n\n'
+								)}</pre>
 						{:else}
 							<div class="p-6 text-center text-xs text-(--muted)">
 								File was modified, no unified diff available.

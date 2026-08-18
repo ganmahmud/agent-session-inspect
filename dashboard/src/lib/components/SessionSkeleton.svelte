@@ -16,7 +16,9 @@
 					<div class="skeleton-box h-3.5 w-24"></div>
 				</div>
 			</div>
-			<div class="min-w-37.5 space-y-1.5 rounded-lg border border-(--line) bg-(--panel-subtle) p-3 text-right">
+			<div
+				class="min-w-37.5 space-y-1.5 rounded-lg border border-(--line) bg-(--panel-subtle) p-3 text-right"
+			>
 				<div class="skeleton-box ml-auto h-3 w-24"></div>
 				<div class="skeleton-box ml-auto h-7 w-20"></div>
 				<div class="skeleton-box ml-auto h-2.5 w-28"></div>

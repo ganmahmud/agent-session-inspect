@@ -795,7 +795,9 @@
 											class="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors hover:bg-(--panel-subtle) {checked
 												? 'text-(--ink)'
 												: 'text-(--muted)'}"
-											title={proj.path ? `Project: ${proj.name}\nLocation: ${proj.path}` : `Project: ${proj.name}`}
+											title={proj.path
+												? `Project: ${proj.name}\nLocation: ${proj.path}`
+												: `Project: ${proj.name}`}
 										>
 											<div class="flex min-w-0 items-center gap-2">
 												<input
@@ -899,7 +901,9 @@
 											{#if proj.name !== 'General / No Project'}
 												<span
 													class="project-badge max-w-24 truncate font-mono text-[9px]"
-													title={proj.path ? `Project: ${proj.name}\nLocation: ${proj.path}` : `Project: ${proj.name}`}
+													title={proj.path
+														? `Project: ${proj.name}\nLocation: ${proj.path}`
+														: `Project: ${proj.name}`}
 												>
 													{proj.name}
 												</span>
@@ -1051,10 +1055,14 @@
 												<div class="min-w-0 text-left">
 													<div
 														class="flex items-center gap-1.5 truncate text-xs font-bold text-(--ink)"
-														title={group.path ? `Project: ${group.name}\nLocation: ${group.path}` : `Project: ${group.name}`}
+														title={group.path
+															? `Project: ${group.name}\nLocation: ${group.path}`
+															: `Project: ${group.name}`}
 													>
 														<span>{group.name}</span>
-														<span class="rounded-full bg-indigo-500/15 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-indigo-400">
+														<span
+															class="py-0.2 rounded-full bg-indigo-500/15 px-1.5 font-mono text-[10px] font-semibold text-indigo-400"
+														>
 															{group.sessions.length}
 														</span>
 													</div>
@@ -1071,7 +1079,9 @@
 
 											<div class="flex shrink-0 items-center gap-1.5">
 												<a
-													href={resolve('/project/[name]', { name: encodeURIComponent(group.name) })}
+													href={resolve('/project/[name]', {
+														name: encodeURIComponent(group.name)
+													})}
 													class="rounded p-1 text-(--muted) transition-colors hover:bg-indigo-500/20 hover:text-indigo-400"
 													title="Open {group.name} Project Overview"
 													onclick={(e) => e.stopPropagation()}
@@ -1315,7 +1325,9 @@
 											{#if proj.name !== 'General / No Project'}
 												<span
 													class="project-badge max-w-28 truncate"
-													title={proj.path ? `Project: ${proj.name}\nLocation: ${proj.path}` : `Project: ${proj.name}`}
+													title={proj.path
+														? `Project: ${proj.name}\nLocation: ${proj.path}`
+														: `Project: ${proj.name}`}
 												>
 													<Folder class="h-2.5 w-2.5" />
 													<span class="truncate">{proj.name}</span>

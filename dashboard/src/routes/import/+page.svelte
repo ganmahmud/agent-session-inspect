@@ -57,10 +57,8 @@
 
 <div class="space-y-6">
 	<div>
-		<h1 class="text-2xl font-extrabold tracking-tight text-(--ink)">
-			Import Session
-		</h1>
-		<p class="text-xs text-(--muted) mt-1">
+		<h1 class="text-2xl font-extrabold tracking-tight text-(--ink)">Import Session</h1>
+		<p class="mt-1 text-xs text-(--muted)">
 			Drop or select an exported JSON file to load session telemetry into memory.
 		</p>
 	</div>
@@ -99,7 +97,7 @@
 
 		<button
 			type="button"
-			class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md hover:bg-indigo-500 transition-colors"
+			class="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-md transition-colors hover:bg-indigo-500"
 		>
 			<Upload class="h-4 w-4" />
 			<span>Browse File</span>
