@@ -30,9 +30,13 @@
 		Wrench,
 		FileCode,
 		Server,
-		GitCommit,
-		Bot
+		GitCommitHorizontal,
+		Bot,
+		FolderGit2,
+		Star
 	} from '@lucide/svelte';
+	import { isPinned, togglePinSession } from '$lib/preferences.svelte';
+	import { extractProjectName } from '$lib/project';
 	import TokenBreakdownVisualizer from '$lib/components/TokenBreakdownVisualizer.svelte';
 	import FileDiffViewer from '$lib/components/FileDiffViewer.svelte';
 	import SubagentTelemetry from '$lib/components/SubagentTelemetry.svelte';
@@ -48,15 +52,16 @@
 
 	let { data }: { data: PageData } = $props();
 	let detail = $derived(data.detail);
-	let subagents = $derived(
-		(data as unknown as { subagents?: SessionDetail[] }).subagents ?? []
-	);
+	let subagents = $derived((data as unknown as { subagents?: SessionDetail[] }).subagents ?? []);
 
 	function formatToolPayload(value: unknown, limit = 25_000): string {
 		if (value === undefined || value === null) return '';
 		const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 		if (str.length > limit) {
-			return str.slice(0, limit) + `\n\n... [Truncated ${str.length - limit} characters for browser performance]`;
+			return (
+				str.slice(0, limit) +
+				`\n\n... [Truncated ${str.length - limit} characters for browser performance]`
+			);
 		}
 		return str;
 	}
@@ -530,13 +535,26 @@
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<!-- Header Left: Source pill + Title + Unified Meta Row -->
 			<div class="min-w-0 flex-1 space-y-2">
-				<div class="flex items-center gap-2">
+				<div class="flex flex-wrap items-center gap-2">
 					<span
 						class="inline-flex items-center gap-1.5 rounded-md border border-(--line) bg-(--panel-subtle) px-2.5 py-0.5 font-mono text-[10px] font-bold tracking-wider text-(--muted) uppercase"
 					>
 						<Code class="h-3 w-3 text-cyan-500" />
 						{detail.displayTitle.source.replace('_', ' ')}
 					</span>
+					{#if detail.projectName || detail.cwd}
+						{@const pName =
+							detail.projectName || (detail.cwd ? extractProjectName(detail.cwd) : undefined)}
+						{#if pName}
+							<span
+								class="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400"
+								title={detail.cwd ? `Project: ${pName}\nLocation: ${detail.cwd}` : `Project: ${pName}`}
+							>
+								<FolderGit2 class="h-3 w-3 text-indigo-400" />
+								<span>{pName}</span>
+							</span>
+						{/if}
+					{/if}
 					<span class="font-mono text-xs text-(--muted)">#{shortId(detail.id)}</span>
 				</div>
 
@@ -582,33 +600,32 @@
 							)} tokens</span
 						>
 					</button>
-					<span>·</span>
-					{#if subagents.length > 0}
-						<button
-							type="button"
-							class="inline-flex cursor-pointer items-center gap-1.5 font-bold text-purple-400 hover:underline"
-							onclick={() => (view = 'subagents')}
-							title="Click to inspect subagents fleet and segregated telemetry"
-						>
-							<Bot class="h-3.5 w-3.5 text-purple-400" />
-							<span>Subagents: {subagents.length} active</span>
-						</button>
-					{:else}
-						<button
-							type="button"
-							class="inline-flex cursor-pointer items-center gap-1.5 opacity-75 hover:text-(--ink) hover:opacity-100"
-							onclick={() => (view = 'subagents')}
-							title="Click to inspect subagents status"
-						>
-							<Bot class="h-3.5 w-3.5 opacity-60" />
-							<span>Subagents: None</span>
-						</button>
-					{/if}
 				</div>
 			</div>
 
 			<!-- Header Right: Quick Actions Group -->
 			<div class="flex shrink-0 items-center gap-2 pt-1 sm:pt-0">
+				<!-- Favorite / Pin Session Button -->
+				<button
+					type="button"
+					class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-xs transition-all {isPinned(
+						detail.id
+					)
+						? 'border-amber-500/50 bg-amber-500/15 font-bold text-amber-300 shadow-xs'
+						: 'border-(--line) bg-(--panel-subtle) text-(--muted) hover:border-amber-400/50 hover:text-amber-300'}"
+					onclick={() => togglePinSession(detail.id)}
+					title={isPinned(detail.id)
+						? 'Unpin from favorites'
+						: 'Pin to favorites (persists in sidebar)'}
+				>
+					<Star
+						class="h-3.5 w-3.5 {isPinned(detail.id)
+							? 'fill-amber-400 text-amber-400'
+							: 'text-current'}"
+					/>
+					<span class="text-xs">{isPinned(detail.id) ? 'Pinned' : 'Pin'}</span>
+				</button>
+
 				<button
 					class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-(--line) bg-(--panel-subtle) px-3 py-1.5 font-mono text-xs text-(--muted) transition-all hover:border-(--accent) hover:bg-(--panel) hover:text-(--ink)"
 					onclick={copySessionId}
@@ -689,7 +706,7 @@
 							: 'border-transparent text-(--muted) hover:border-(--line) hover:text-(--ink)'}"
 						onclick={() => (view = 'changes')}
 					>
-						<GitCommit
+						<GitCommitHorizontal
 							class="h-3.5 w-3.5 {view === 'changes' ? 'text-emerald-400' : 'text-(--muted)'}"
 						/>
 						<span>Changes</span>
@@ -1131,7 +1148,7 @@
 												onclick={() => toggleMessageDiffs(message.id)}
 												title="Click to toggle code changes made in this message"
 											>
-												<GitCommit class="h-3.5 w-3.5" />
+												<GitCommitHorizontal class="h-3.5 w-3.5" />
 												<span class="text-xs"
 													>{msgChanges.filesCount} file{msgChanges.filesCount === 1 ? '' : 's'} changed</span
 												>
@@ -1207,7 +1224,9 @@
 																		>Input / Task Prompt:</span
 																	>
 																	<pre
-																		class="max-h-48 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(tool.input)}</pre>
+																		class="max-h-48 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(
+																			tool.input
+																		)}</pre>
 																</div>
 															{/if}
 
@@ -1218,7 +1237,9 @@
 																		>Output / Result:</span
 																	>
 																	<pre
-																		class="max-h-60 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(tool.output)}</pre>
+																		class="max-h-60 overflow-x-auto rounded border border-(--line) bg-(--canvas) p-2 text-xs whitespace-pre-wrap text-(--ink)">{formatToolPayload(
+																			tool.output
+																		)}</pre>
 																</div>
 															{/if}
 														</div>
@@ -1237,7 +1258,7 @@
 												class="flex items-center justify-between border-b border-(--line-subtle) pb-2"
 											>
 												<div class="flex items-center gap-2 font-mono text-xs">
-													<GitCommit class="h-4 w-4 text-emerald-400" />
+													<GitCommitHorizontal class="h-4 w-4 text-emerald-400" />
 													<span class="font-bold text-emerald-400"
 														>Code Changes in This Message</span
 													>
@@ -1329,8 +1350,10 @@
 																							<td class="diff-line-content">
 																								<pre
 																									class="m-0 bg-transparent p-0 font-mono text-xs whitespace-pre-wrap"
-																									use:highlight={{ code: line.content || ' ', path: file.path }}
-																								></pre>
+																									use:highlight={{
+																										code: line.content || ' ',
+																										path: file.path
+																									}}></pre>
 																							</td>
 																						</tr>
 																					{/if}

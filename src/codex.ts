@@ -5,6 +5,7 @@ import type {
   CatalogTitle,
   DisplayTitle,
   NormalizedEvent,
+  ProjectGroup,
   Relationship,
   ScanResult,
   SessionInventory,
@@ -102,8 +103,47 @@ export function normalizeCodexRecord(record: JsonRecord, file: string, line: num
   };
 }
 
+export function isSystemOrTempPath(pathStr: string): boolean {
+  const normalized = pathStr.replace(/\\/g, '/').toLowerCase();
+  if (
+    normalized.startsWith('/tmp/') ||
+    normalized.startsWith('/private/tmp/') ||
+    normalized.startsWith('/var/folders/') ||
+    normalized.startsWith('/private/var/') ||
+    normalized.includes('/appdata/local/temp/')
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function extractProjectName(cwd?: string, explicitName?: string): string | undefined {
+  if (explicitName && explicitName.trim() && !explicitName.trim().startsWith('.')) {
+    return explicitName.trim();
+  }
+  if (!cwd || !cwd.trim()) return undefined;
+  const trimmed = cwd.trim().replace(/[\\/]+$/, '');
+  if (!trimmed) return undefined;
+  if (isSystemOrTempPath(trimmed)) return undefined;
+
+  const segments = trimmed.split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0) return undefined;
+  const lastSegment = segments[segments.length - 1];
+
+  // Dotfolders (e.g. .buzz, .codex, .vscode, .gemini, .cache) are internal/tool dirs, not user projects
+  if (lastSegment.startsWith('.')) return undefined;
+
+  // Ignore user home root (e.g. /Users/username, /home/username)
+  if (segments.length === 2 && (segments[0] === 'Users' || segments[0] === 'home')) {
+    return undefined;
+  }
+
+  return lastSegment;
+}
+
 function observeMetadata(session: MutableSession, payload: JsonRecord, timestamp: string | undefined): void {
   session.cwd ??= asText(payload.cwd);
+  session.projectName ??= asText(payload.project_name) ?? asText(payload.project) ?? asText(payload.workspace_name) ?? extractProjectName(session.cwd);
   session.provider ??= asText(payload.model_provider);
   const version = asText(payload.cli_version);
   if (version && !session.cliVersions.includes(version)) session.cliVersions.push(version);
@@ -181,14 +221,22 @@ function knownRecord(recordType: string, payloadType: string | undefined): boole
 
 function collectFiles(path: string): string[] {
   const target = resolve(path);
-  if (!existsSync(target)) throw new Error(`Path does not exist: ${target}`);
-  if (!statSync(target).isDirectory()) return target.endsWith('.jsonl') ? [target] : [];
+  try {
+    if (!existsSync(target)) return [];
+    if (!statSync(target).isDirectory()) return target.endsWith('.jsonl') ? [target] : [];
+  } catch {
+    return [];
+  }
   const files: string[] = [];
   const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const child = join(directory, entry.name);
-      if (entry.isDirectory()) visit(child);
-      else if (entry.isFile() && entry.name.endsWith('.jsonl')) files.push(child);
+    try {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const child = join(directory, entry.name);
+        if (entry.isDirectory()) visit(child);
+        else if (entry.isFile() && entry.name.endsWith('.jsonl')) files.push(child);
+      }
+    } catch {
+      // Ignore unreadable subdirectories
     }
   };
   visit(target);
@@ -224,6 +272,7 @@ function cloneSession(session: MutableSession): MutableSession {
     relationshipKeys: new Set(session.relationshipKeys ?? []),
     displayTitle: { ...session.displayTitle },
     titleFromLog: session.titleFromLog ? { ...session.titleFromLog } : undefined,
+    projectName: session.projectName,
   };
 }
 
@@ -235,6 +284,7 @@ function mergeSessions(target: MutableSession, source: MutableSession): void {
     if (!target.cliVersions.includes(v)) target.cliVersions.push(v);
   }
   target.cwd ??= source.cwd;
+  target.projectName ??= source.projectName ?? extractProjectName(target.cwd);
   target.provider ??= source.provider;
   target.recordCount += source.recordCount;
   target.malformedRecords += source.malformedRecords;
@@ -415,4 +465,44 @@ export function shortId(id: string): string {
 
 export function sourceLabel(session: SessionInventory): string {
   return session.sourceFiles.map((file) => basename(file)).join(', ');
+}
+
+export function projectName(session: SessionInventory): string {
+  return session.projectName || extractProjectName(session.cwd) || 'General / No Project';
+}
+
+export function groupSessionsByProject(sessions: SessionInventory[]): ProjectGroup[] {
+  const map = new Map<string, { name: string; path?: string; sessions: SessionInventory[]; totalTokens: number; latestActivity: number }>();
+  for (const session of sessions) {
+    const pName = projectName(session);
+    if (pName === 'General / No Project') continue;
+    const key = session.cwd || pName;
+    const time = Date.parse(session.updatedAt ?? session.startedAt ?? '') || 0;
+    let group = map.get(key);
+    if (!group) {
+      group = {
+        name: pName,
+        path: session.cwd,
+        sessions: [],
+        totalTokens: 0,
+        latestActivity: time,
+      };
+      map.set(key, group);
+    } else {
+      if (time > group.latestActivity) group.latestActivity = time;
+    }
+    group.sessions.push(session);
+    const tokens = session.token?.last?.totalTokens ?? session.token?.total?.totalTokens ?? 0;
+    group.totalTokens += tokens;
+  }
+  return Array.from(map.values())
+    .map((g) => ({
+      name: g.name,
+      path: g.path,
+      sessions: g.sessions.sort((a, b) => (Date.parse(b.updatedAt ?? b.startedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? a.startedAt ?? '') || 0)),
+      totalTokens: g.totalTokens,
+      sessionCount: g.sessions.length,
+      latestActivity: g.latestActivity,
+    }))
+    .sort((a, b) => b.latestActivity - a.latestActivity);
 }

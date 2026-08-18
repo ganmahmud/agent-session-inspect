@@ -177,6 +177,76 @@ button, input {
 	box-shadow: inset 3px 0 0 var(--accent);
 }
 
+/* Project Grouping in Sidebar */
+.project-group-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: 8px 12px;
+	background: var(--panel-subtle);
+	border: 0;
+	border-bottom: 1px solid var(--line);
+	color: var(--ink);
+	font-size: 11px;
+	font-weight: 700;
+	cursor: pointer;
+	text-align: left;
+	transition: background 0.15s ease;
+}
+.project-group-header:hover {
+	background: rgba(99, 102, 241, 0.15);
+}
+.project-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 1.5px 6px;
+	border-radius: 4px;
+	font-size: 10px;
+	font-weight: 600;
+	background: rgba(99, 102, 241, 0.12);
+	color: #a5b4fc;
+	border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+/* Resizable Workspace Grid */
+@media (min-width: 1024px) {
+	.workspace-layout-grid {
+		display: grid !important;
+		grid-template-columns: var(--sidebar-width, 340px) minmax(0, 1fr) !important;
+	}
+}
+
+.sidebar-resizer {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	right: -4px;
+	width: 8px;
+	cursor: col-resize;
+	z-index: 40;
+	user-select: none;
+	touch-action: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.sidebar-resizer::after {
+	content: '';
+	width: 2px;
+	height: 100%;
+	background: transparent;
+	transition: background-color 0.15s ease;
+}
+
+.sidebar-resizer:hover::after,
+.sidebar-resizer.is-resizing::after {
+	background: #6366f1;
+	box-shadow: 0 0 8px rgba(99, 102, 241, 0.6);
+}
+
 /* Tabs */
 .tabs {
 	display: flex;

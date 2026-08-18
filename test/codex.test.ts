@@ -319,4 +319,62 @@ test('incrementally caches unchanged session files and produces identical result
 	}
 });
 
+test('extracts project names and groups sessions by project workspace', async () => {
+	const { extractProjectName, projectName, groupSessionsByProject } = await import('../src/codex.ts');
+
+	// Path parsing checks
+	assert.equal(extractProjectName('/Users/dev/workspace/frontend-app'), 'frontend-app');
+	assert.equal(extractProjectName('/Users/dev/workspace/frontend-app/'), 'frontend-app');
+	assert.equal(extractProjectName('C:\\Users\\dev\\projects\\backend-api'), 'backend-api');
+	assert.equal(extractProjectName('C:\\Users\\dev\\projects\\backend-api\\'), 'backend-api');
+	assert.equal(extractProjectName('/Users/dev/.buzz'), undefined);
+	assert.equal(extractProjectName('/Users/dev/.codex'), undefined);
+	assert.equal(extractProjectName('/tmp/scratch-agent'), undefined);
+	assert.equal(extractProjectName('/Users/dev'), undefined);
+	assert.equal(extractProjectName(undefined), undefined);
+	assert.equal(extractProjectName('', 'Explicit Project'), 'Explicit Project');
+
+	const directory = tempDirectory();
+	try {
+		writeLog(directory, 'app1.jsonl', [
+			jsonLine('session_meta', { id: sessionOne, cwd: '/workspace/project-alpha' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Alpha Task 1' }),
+			jsonLine('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: 500 } } }),
+		]);
+		writeLog(directory, 'app2.jsonl', [
+			jsonLine('session_meta', { id: sessionTwo, cwd: '/workspace/project-alpha' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Alpha Task 2' }),
+			jsonLine('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: 300 } } }),
+		]);
+		writeLog(directory, 'app3.jsonl', [
+			jsonLine('session_meta', { id: sessionThree, cwd: '/workspace/project-beta' }),
+			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Beta Task 1' }),
+			jsonLine('event_msg', { type: 'token_count', info: { total_token_usage: { total_tokens: 200 } } }),
+		]);
+
+		const result = await scanCodex(directory);
+		assert.equal(result.sessions.length, 3);
+
+		const sessionAlpha1 = result.sessions.find((s) => s.id === sessionOne)!;
+		assert.equal(sessionAlpha1.projectName, 'project-alpha');
+		assert.equal(projectName(sessionAlpha1), 'project-alpha');
+
+		const groups = groupSessionsByProject(result.sessions);
+		assert.equal(groups.length, 2);
+
+		const alphaGroup = groups.find((g) => g.name === 'project-alpha')!;
+		assert.ok(alphaGroup);
+		assert.equal(alphaGroup.sessionCount, 2);
+		assert.equal(alphaGroup.totalTokens, 800);
+		assert.equal(alphaGroup.path, '/workspace/project-alpha');
+
+		const betaGroup = groups.find((g) => g.name === 'project-beta')!;
+		assert.ok(betaGroup);
+		assert.equal(betaGroup.sessionCount, 1);
+		assert.equal(betaGroup.totalTokens, 200);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 

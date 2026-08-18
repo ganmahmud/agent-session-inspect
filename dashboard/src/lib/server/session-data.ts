@@ -23,10 +23,23 @@ const INVENTORY_CACHE_TTL_MS = 30_000;
 
 export async function sessionInventory(): Promise<ScanResult> {
 	if (cached && Date.now() - cached.createdAt < INVENTORY_CACHE_TTL_MS) return cached.result;
-	const catalog = readCodexCatalog(catalogPaths);
-	const result = await scanCodex(sessionPath, { catalogTitles: catalog.titles, catalogErrors: catalog.errors });
-	cached = { createdAt: Date.now(), result };
-	return result;
+	try {
+		const catalog = readCodexCatalog(catalogPaths);
+		const result = await scanCodex(sessionPath, { catalogTitles: catalog.titles, catalogErrors: catalog.errors });
+		cached = { createdAt: Date.now(), result };
+		return result;
+	} catch (err) {
+		return {
+			schemaVersion: 1,
+			provider: 'codex',
+			sessions: [],
+			diagnostics: {
+				filesRead: 0,
+				malformedRecords: 0,
+				catalogErrors: [err instanceof Error ? err.message : 'failed to scan sessions']
+			}
+		};
+	}
 }
 
 export async function sessionDetail(id: string, existingInventory?: ScanResult): Promise<SessionDetail | undefined> {

@@ -54,6 +54,7 @@ export interface SessionInventory {
   startedAt?: string;
   updatedAt?: string;
   cwd?: string;
+  projectName?: string;
   provider?: string;
   cliVersions: string[];
   recordCount: number;
@@ -68,6 +69,14 @@ export interface SessionInventory {
   compactionCount: number;
   rollbackCount: number;
   relationships: Relationship[];
+}
+
+export interface ProjectGroup {
+  name: string;
+  path?: string;
+  sessions: SessionInventory[];
+  totalTokens: number;
+  sessionCount: number;
 }
 
 export interface ScanResult {

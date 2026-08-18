@@ -1,6 +1,6 @@
 import readline from 'node:readline';
 import { writeFileSync } from 'node:fs';
-import { displayName, shortId } from './codex.ts';
+import { displayName, projectName, shortId } from './codex.ts';
 import { readCodexSessionDetail } from './detail.ts';
 import type { ReplyActivity, ScanResult, SessionDetail, SessionInventory } from './types.ts';
 
@@ -454,6 +454,10 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         currentLines.push('');
 
         currentLines.push(...formatCard('TIMELINE & METRICS', c.cyan, [
+          ...(selectedSession.cwd || selectedSession.projectName ? [
+            `Project      ${projectName(selectedSession)}`,
+            ...(selectedSession.cwd ? [`Workspace    ${selectedSession.cwd}`] : []),
+          ] : []),
           `Started      ${selectedSession.startedAt ?? 'unknown'}`,
           `Updated      ${selectedSession.updatedAt ?? 'unknown'}`,
           `Duration     ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,

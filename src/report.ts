@@ -1,4 +1,4 @@
-import { displayName, shortId } from './codex.ts';
+import { displayName, projectName, shortId } from './codex.ts';
 import type { ScanResult, SessionInventory } from './types.ts';
 
 const useColor = Boolean(process.stdout.isTTY && process.env.NO_COLOR === undefined);
@@ -46,8 +46,9 @@ export function renderScan(result: ScanResult, verbose: boolean): string {
   ].join('\n');
 
   const rows = result.sessions.map((session) => {
+    const pTag = session.cwd || session.projectName ? ` ${gray('·')} ${dim('PRJ')} ${brightCyan(projectName(session))}` : '';
     const titleLine = `${brightGreen('◈')} ${bold(displayName(session))}`;
-    const idLine = `  ${gray('│')} ${dim('ID')} ${cyan(shortId(session.id).padEnd(10))} ${gray('·')} ${dim('DATE')} ${date(session.startedAt)}`;
+    const idLine = `  ${gray('│')} ${dim('ID')} ${cyan(shortId(session.id).padEnd(10))} ${gray('·')} ${dim('DATE')} ${date(session.startedAt)}${pTag}`;
     const statsLine = `  ${gray('│')} ${dim('STATS')} ${brightCyan(duration(session.startedAt, session.updatedAt).padEnd(8))} ${gray('│')} ${yellow(`${formatNumber(latestTokens(session))} tokens`)} ${gray('│')} ${magenta(`${session.tools.calls} tools`)}`;
     const detail = verbose ? `\n  ${gray('│')} ${dim('SOURCE')} ${gray(session.sourceFiles.join(', '))}` : '';
     return `${titleLine}\n${idLine}\n${statsLine}${detail}`;
@@ -75,6 +76,10 @@ export function renderInspect(session: SessionInventory, verbose: boolean): stri
     `  ${cyan('│')} ${dim('Session ID'.padEnd(14))} ${cyan(session.id)}`,
     `  ${cyan('│')} ${dim('Short ID'.padEnd(14))} ${brightCyan(shortId(session.id))}`,
     `  ${cyan('│')} ${dim('Title Source'.padEnd(14))} ${session.displayTitle.source}`,
+    ...(session.cwd || session.projectName ? [
+      `  ${cyan('│')} ${dim('Project'.padEnd(14))} ${brightCyan(projectName(session))}`,
+      ...(session.cwd ? [`  ${cyan('│')} ${dim('Workspace'.padEnd(14))} ${gray(session.cwd)}`] : []),
+    ] : []),
     `  ${cyan('│')} ${dim('Timeline'.padEnd(14))} ${session.startedAt ?? 'unknown'} → ${session.updatedAt ?? 'unknown'}`,
     `  ${cyan('│')} ${dim('Duration'.padEnd(14))} ${brightGreen(duration(session.startedAt, session.updatedAt))}`,
     `  ${cyan('└──────────────────────────────────────────────────────────────────────────┘')}`,

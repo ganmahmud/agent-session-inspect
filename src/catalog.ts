@@ -66,14 +66,23 @@ function readCatalogFile(file: string): CatalogTitle[] {
 
 export function readCodexCatalog(catalogDirectories: string | string[]): { titles: CatalogTitle[]; errors: string[] } {
   const directories = Array.isArray(catalogDirectories) ? catalogDirectories : [catalogDirectories];
-  const files = directories.flatMap((catalogDir) => {
-    if (!existsSync(catalogDir)) return [];
-    return readdirSync(catalogDir)
-      .filter((file) => /^(state_.*\.sqlite|codex.*\.db)$/.test(file))
-      .map((file) => join(catalogDir, file));
-  });
+  const files: string[] = [];
   const titles: CatalogTitle[] = [];
   const errors: string[] = [];
+
+  for (const catalogDir of directories) {
+    try {
+      if (!existsSync(catalogDir)) continue;
+      const entries = readdirSync(catalogDir);
+      for (const file of entries) {
+        if (/^(state_.*\.sqlite|codex.*\.db)$/.test(file)) {
+          files.push(join(catalogDir, file));
+        }
+      }
+    } catch (err) {
+      errors.push(`${catalogDir}: ${err instanceof Error ? err.message : 'unreadable directory'}`);
+    }
+  }
 
   for (const file of files) {
     try {
