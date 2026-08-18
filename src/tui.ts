@@ -2,7 +2,12 @@ import readline from 'node:readline';
 import { writeFileSync } from 'node:fs';
 import { displayName, projectName, shortId } from './codex.ts';
 import { readCodexSessionDetail } from './detail.ts';
-import type { ReplyActivity, ScanResult, SessionDetail, SessionInventory } from './types.ts';
+import type {
+  ReplyActivity,
+  ScanResult,
+  SessionDetail,
+  SessionInventory,
+} from './types.ts';
 
 // 256-color palette for futuristic aesthetic
 const c = {
@@ -41,7 +46,9 @@ function visibleLength(str: string): number {
 }
 
 function formatNumber(value: number | undefined): string {
-  return value === undefined ? '—' : new Intl.NumberFormat('en-US').format(value);
+  return value === undefined
+    ? '—'
+    : new Intl.NumberFormat('en-US').format(value);
 }
 
 function formatCompactTokens(value: number | undefined): string {
@@ -64,7 +71,10 @@ function getSubagentCount(session: SessionInventory): number {
   return eventSubCount > 0 ? eventSubCount : 0;
 }
 
-function duration(startedAt: string | undefined, updatedAt: string | undefined): string {
+function duration(
+  startedAt: string | undefined,
+  updatedAt: string | undefined,
+): string {
   if (!startedAt || !updatedAt) return '—';
   const milliseconds = Date.parse(updatedAt) - Date.parse(startedAt);
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return '—';
@@ -112,7 +122,12 @@ function wrapText(input: string, maxWidth: number): string[] {
   return output;
 }
 
-function formatCard(title: string, colorFn: (s: string) => string, lines: string[], width: number): string[] {
+function formatCard(
+  title: string,
+  colorFn: (s: string) => string,
+  lines: string[],
+  width: number,
+): string[] {
   const cardWidth = Math.max(16, width);
   const innerWidth = cardWidth - 4;
   const plainTitle = stripAnsi(title);
@@ -127,7 +142,12 @@ function formatCard(title: string, colorFn: (s: string) => string, lines: string
 }
 
 function activityTotal(activity?: ReplyActivity): number {
-  return activity?.modelRequests.reduce((sum, request) => sum + (request.usage.totalTokens ?? 0), 0) ?? 0;
+  return (
+    activity?.modelRequests.reduce(
+      (sum, request) => sum + (request.usage.totalTokens ?? 0),
+      0,
+    ) ?? 0
+  );
 }
 
 interface UsageStats {
@@ -152,9 +172,13 @@ function computeUsageStats(detail: SessionDetail): UsageStats {
   const snapshots = detail.usage.snapshots ?? [];
   const maxContext = latest?.modelContextWindow || 200000;
   const latestTotal = latest
-    ? (latest.usage.totalTokens ?? (latest.usage.inputTokens ?? 0) + (latest.usage.outputTokens ?? 0))
+    ? (latest.usage.totalTokens ??
+      (latest.usage.inputTokens ?? 0) + (latest.usage.outputTokens ?? 0))
     : 0;
-  const saturationPct = Math.min(100, Math.round((latestTotal / maxContext) * 100));
+  const saturationPct = Math.min(
+    100,
+    Math.round((latestTotal / maxContext) * 100),
+  );
 
   const latestInput = latest?.usage.inputTokens ?? 0;
   const latestCached = latest?.usage.cachedInputTokens ?? 0;
@@ -162,8 +186,10 @@ function computeUsageStats(detail: SessionDetail): UsageStats {
   const latestOutput = latest?.usage.outputTokens ?? 0;
   const latestReasoning = latest?.usage.reasoningOutputTokens ?? 0;
 
-  const cacheHitRatio = latestInput > 0 ? Math.round((latestCached / latestInput) * 100) : 0;
-  const reasoningRatio = latestOutput > 0 ? Math.round((latestReasoning / latestOutput) * 100) : 0;
+  const cacheHitRatio =
+    latestInput > 0 ? Math.round((latestCached / latestInput) * 100) : 0;
+  const reasoningRatio =
+    latestOutput > 0 ? Math.round((latestReasoning / latestOutput) * 100) : 0;
 
   let totalToolMs = 0;
   let totalOtherMs = 0;
@@ -208,16 +234,25 @@ interface TopTokenTurn {
   reasoning: number;
 }
 
-function computeTopTokenTurns(detail: SessionDetail, usageStats: UsageStats): TopTokenTurn[] {
-  const assistantMsgs = detail.conversation.filter((m) => m.role === 'assistant');
+function computeTopTokenTurns(
+  detail: SessionDetail,
+  usageStats: UsageStats,
+): TopTokenTurn[] {
+  const assistantMsgs = detail.conversation.filter(
+    (m) => m.role === 'assistant',
+  );
   const grandTotal = usageStats.latestTotal || 1;
 
   const turns = assistantMsgs.map((m, turnIdx) => {
     const total = activityTotal(m.activity);
     const msgIdx = detail.conversation.findIndex((x) => x.id === m.id);
-    const prevUserMsg = msgIdx > 0
-      ? detail.conversation.slice(0, msgIdx).reverse().find((x) => x.role === 'user' && x.kind !== 'internal_review')
-      : undefined;
+    const prevUserMsg =
+      msgIdx > 0
+        ? detail.conversation
+            .slice(0, msgIdx)
+            .reverse()
+            .find((x) => x.role === 'user' && x.kind !== 'internal_review')
+        : undefined;
 
     let input = 0;
     let cached = 0;
@@ -239,7 +274,9 @@ function computeTopTokenTurns(detail: SessionDetail, usageStats: UsageStats): To
       turnNumber: turnIdx + 1,
       totalTokens: total,
       shareOfSessionPct: Math.round((total / grandTotal) * 100),
-      promptSnippet: prevUserMsg?.text ? sanitize(prevUserMsg.text).slice(0, 100) : 'Assistant response',
+      promptSnippet: prevUserMsg?.text
+        ? sanitize(prevUserMsg.text).slice(0, 100)
+        : 'Assistant response',
       modelName: m.activity?.model.name ?? 'Model',
       stepCount: m.activity?.modelRequests.length ?? 0,
       input,
@@ -276,7 +313,12 @@ function computeToolUsageProfile(detail: SessionDetail): ToolProfile {
     if (m.role === 'assistant' && m.activity) {
       for (const t of m.activity.tools ?? []) {
         const key = t.name ?? t.kind ?? 'tool';
-        const current = map.get(key) ?? { name: key, kind: t.kind, count: 0, durationMs: 0 };
+        const current = map.get(key) ?? {
+          name: key,
+          kind: t.kind,
+          count: 0,
+          durationMs: 0,
+        };
         current.count += 1;
         current.durationMs += t.durationMs ?? 0;
         map.set(key, current);
@@ -322,7 +364,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
   let scrollOffset = 0;
   let rightScrollOffset = 0;
   let activeTab = 0; // 0: Overview, 1: Activity, 2: Analytics, 3: Tools, 4: Changes, 5: Subagents, 6: Metadata
-  let activePane: 'sidebar' | 'main' = 'sidebar';
+  let activePane: 'projects' | 'sidebar' | 'main' = 'sidebar';
   let searchQuery = '';
   let isSearching = false;
   let selectedProjectFilter: string | null = null; // null = all projects
@@ -334,8 +376,42 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
   // Extract all unique project names
   const allProjects = Array.from(
-    new Set(sessions.map((s) => projectName(s)).filter((p) => p !== 'General / No Project'))
+    new Set(
+      sessions
+        .map((s) => projectName(s))
+        .filter((p) => p !== 'General / No Project'),
+    ),
   ).sort();
+
+  const getProjectList = (): (string | null)[] => [null, ...allProjects];
+
+  const setProjectFilter = (proj: string | null) => {
+    selectedProjectFilter = proj;
+    selectedIndex = 0;
+    scrollOffset = 0;
+    rightScrollOffset = 0;
+    const newFiltered = getFilteredSessions();
+    if (newFiltered[0]) loadDetail(newFiltered[0]);
+    if (proj) {
+      notify(
+        `Project: ${proj} (${newFiltered.length} session${newFiltered.length !== 1 ? 's' : ''})`,
+      );
+    } else {
+      notify(`All Projects (${sessions.length} sessions)`);
+    }
+  };
+
+  const cycleProject = (direction: 1 | -1) => {
+    const list = getProjectList();
+    if (list.length <= 1) {
+      notify('No named projects found in session inventory.');
+      return;
+    }
+    let curIdx = list.indexOf(selectedProjectFilter);
+    if (curIdx === -1) curIdx = 0;
+    const nextIdx = (curIdx + direction + list.length) % list.length;
+    setProjectFilter(list[nextIdx]);
+  };
 
   const notify = (msg: string) => {
     notificationMessage = msg;
@@ -350,14 +426,18 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
   const getFilteredSessions = () => {
     let list = sessions;
     if (selectedProjectFilter) {
-      list = list.filter((s) => projectName(s).toLowerCase() === selectedProjectFilter!.toLowerCase());
+      list = list.filter(
+        (s) =>
+          projectName(s).toLowerCase() === selectedProjectFilter!.toLowerCase(),
+      );
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      list = list.filter((s) =>
-        sanitize(displayName(s)).toLowerCase().includes(q) ||
-        s.id.toLowerCase().includes(q) ||
-        projectName(s).toLowerCase().includes(q)
+      list = list.filter(
+        (s) =>
+          sanitize(displayName(s)).toLowerCase().includes(q) ||
+          s.id.toLowerCase().includes(q) ||
+          projectName(s).toLowerCase().includes(q),
       );
     }
     return list;
@@ -379,7 +459,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
   // Setup Terminal with button mouse tracking to prevent terminal buffer scroll
   process.stdout.write('\x1b[?1049h'); // Alternate screen buffer
-  process.stdout.write('\x1b[?25l');   // Hide cursor
+  process.stdout.write('\x1b[?25l'); // Hide cursor
   process.stdout.write('\x1b[?1000h\x1b[?1002h\x1b[?1006h'); // Button & SGR Mouse tracking
 
   readline.emitKeypressEvents(process.stdin);
@@ -393,6 +473,13 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     process.exit(0);
   };
 
+  // Keep track of project pill hitboxes for mouse clicking
+  let projectPillBounds: Array<{
+    proj: string | null;
+    startX: number;
+    endX: number;
+  }> = [];
+
   const render = () => {
     const cols = process.stdout.columns || 100;
     const rows = process.stdout.rows || 30;
@@ -401,12 +488,132 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const mainWidth = Math.max(20, cols - sidebarWidth - 1);
 
     const filtered = getFilteredSessions();
-    if (selectedIndex >= filtered.length) selectedIndex = Math.max(0, filtered.length - 1);
+    if (selectedIndex >= filtered.length)
+      selectedIndex = Math.max(0, filtered.length - 1);
 
-    // Each session item uses 2 terminal rows
-    const visibleItemCount = Math.floor((rows - 5) / 2);
-    if (selectedIndex < scrollOffset) scrollOffset = selectedIndex;
-    if (selectedIndex >= scrollOffset + visibleItemCount) scrollOffset = selectedIndex - visibleItemCount + 1;
+    // Build sidebar display lines (with project grouping)
+    const showGrouped =
+      !selectedProjectFilter && allProjects.length > 0 && !searchQuery.trim();
+    const sidebarDisplayLines: Array<{
+      plain: string;
+      colored: string;
+      sel: boolean;
+      sessionIndex?: number;
+      isGroupHeader?: boolean;
+    }> = [];
+
+    if (showGrouped) {
+      const groupMap = new Map<string, number[]>();
+      for (let i = 0; i < filtered.length; i++) {
+        const key = projectName(filtered[i]) || 'General / No Project';
+        if (!groupMap.has(key)) groupMap.set(key, []);
+        groupMap.get(key)!.push(i);
+      }
+      for (const [gName, indices] of groupMap.entries()) {
+        const hdr = `  [${gName}]`
+          .padEnd(sidebarWidth - 2)
+          .slice(0, sidebarWidth - 2);
+        sidebarDisplayLines.push({
+          plain: hdr,
+          colored: c.yellow(c.bold(hdr)),
+          sel: false,
+          isGroupHeader: true,
+        });
+        for (const idx of indices) {
+          const session = filtered[idx];
+          const isSel = idx === selectedIndex;
+          const cleanTitle = sanitize(displayName(session));
+          const tokens = latestTokens(session);
+          const subCount = getSubagentCount(session);
+          const toolCount = session.tools.calls;
+          const subStr =
+            subCount > 0
+              ? ` · 🤖 ${subCount} subagent${subCount > 1 ? 's' : ''}`
+              : '';
+          const icon = isSel ? (activePane === 'sidebar' ? '▶ ' : '👉 ') : '◈ ';
+          const l1 = (icon + cleanTitle)
+            .slice(0, sidebarWidth - 2)
+            .padEnd(sidebarWidth - 2);
+          const l2 =
+            `  ⚡ ${formatCompactTokens(tokens)} tokens · ${toolCount} tool${toolCount !== 1 ? 's' : ''}${subStr}`
+              .slice(0, sidebarWidth - 2)
+              .padEnd(sidebarWidth - 2);
+          const l3 =
+            `  ${date(session.startedAt)} · ${duration(session.startedAt, session.updatedAt)} · #${shortId(session.id)}`
+              .slice(0, sidebarWidth - 2)
+              .padEnd(sidebarWidth - 2);
+          sidebarDisplayLines.push({
+            plain: l1,
+            colored: c.white(l1),
+            sel: isSel,
+            sessionIndex: idx,
+          });
+          sidebarDisplayLines.push({
+            plain: l2,
+            colored: c.yellow(l2),
+            sel: isSel,
+            sessionIndex: idx,
+          });
+          sidebarDisplayLines.push({
+            plain: l3,
+            colored: c.gray(l3),
+            sel: isSel,
+            sessionIndex: idx,
+          });
+        }
+      }
+    } else {
+      for (let i = 0; i < filtered.length; i++) {
+        const session = filtered[i];
+        const isSel = i === selectedIndex;
+        const cleanTitle = sanitize(displayName(session));
+        const tokens = latestTokens(session);
+        const subCount = getSubagentCount(session);
+        const pName = projectName(session);
+        const toolCount = session.tools.calls;
+        const subStr = subCount > 0 ? ` · 🤖${subCount}` : '';
+        const prjStr =
+          pName && pName !== 'General / No Project'
+            ? ` · 📁${pName.slice(0, 10)}`
+            : '';
+        const sub = `${date(session.startedAt)} · ${duration(session.startedAt, session.updatedAt)}${tokens ? ' · ' + formatCompactTokens(tokens) + 't' : ''}${subStr}${prjStr}`;
+        const icon = isSel ? (activePane === 'sidebar' ? '▶ ' : '👉 ') : '◈ ';
+        const l1 = (icon + cleanTitle)
+          .slice(0, sidebarWidth - 2)
+          .padEnd(sidebarWidth - 2);
+        const l2 = `   ${sub}`
+          .slice(0, sidebarWidth - 2)
+          .padEnd(sidebarWidth - 2);
+        sidebarDisplayLines.push({
+          plain: l1,
+          colored: c.white(l1),
+          sel: isSel,
+          sessionIndex: i,
+        });
+        sidebarDisplayLines.push({
+          plain: l2,
+          colored: c.gray(l2),
+          sel: isSel,
+          sessionIndex: i,
+        });
+      }
+    }
+
+    // Compute sidebar scroll (line-based)
+    const sidebarContentStart = 5; // row 5 = first sidebar content row
+    const sidebarVisibleRows = Math.max(1, rows - sidebarContentStart - 1);
+    let selLinePos = 0;
+    for (let i = 0; i < sidebarDisplayLines.length; i++) {
+      if (sidebarDisplayLines[i].sel) {
+        selLinePos = i;
+        break;
+      }
+    }
+    if (selLinePos < scrollOffset) scrollOffset = selLinePos;
+    if (selLinePos + 3 > scrollOffset + sidebarVisibleRows) {
+      scrollOffset = Math.max(0, selLinePos + 3 - sidebarVisibleRows);
+    }
+    if (scrollOffset < 0) scrollOffset = 0;
 
     const buffer: string[] = [];
     const move = (r: number, col: number) => `\x1b[${r};${col}H`;
@@ -414,168 +621,305 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     // 1. Move cursor to Home
     buffer.push('\x1b[H');
 
-    // 2. Header Banner
-    const totalTokens = sessions.reduce((sum, s) => sum + (latestTokens(s) ?? 0), 0);
-    const headerTitle = `⚡ AGENT SESSION INSPECTOR`;
-    const projectFilterText = selectedProjectFilter ? `📁 ${selectedProjectFilter} · ` : '';
-    const headerStats = `${projectFilterText}${filtered.length}/${sessions.length} sessions · ${formatCompactTokens(totalTokens)} tokens`;
-    const focusTag = activePane === 'sidebar' ? c.bgFocusTag(' SIDEBAR FOCUS ') : c.bgFocusTag(' MAIN FOCUS ');
-    const headerLine = ` ${c.bold(headerTitle)}  ${c.dim('│')}  ${c.yellow(headerStats)}  ${focusTag}`.padEnd(cols - 1);
+    // 2. Header Banner (Row 1)
+    const totalTokens = sessions.reduce(
+      (sum, s) => sum + (latestTokens(s) ?? 0),
+      0,
+    );
+    const headerTitle = `⚡ AGENT SESSION INSPECT ⚡`;
+    const onlineBadge = c.bgFocusTag(' Local ');
+    const headerStats = `${sessions.length} sessions loaded · ${allProjects.length} projects`;
+    const focusTag =
+      activePane === 'projects'
+        ? c.bgFocusTag(' PROJECTS FOCUS ')
+        : activePane === 'sidebar'
+          ? c.bgFocusTag(' SIDEBAR FOCUS ')
+          : c.bgFocusTag(' MAIN FOCUS ');
+    const headerLine =
+      ` ${c.bold(headerTitle)}  ${onlineBadge}  ${c.dim('·')}  ${c.yellow(headerStats)}  ${focusTag}`.padEnd(
+        cols - 1,
+      );
     buffer.push(move(1, 1) + c.bgHeader(headerLine.slice(0, cols)));
 
-    // 3. Vertical Divider Line
+    // 2b. Project Toolbar (Row 2 — full width with interactive focus)
+    const projectList = getProjectList();
+    const toolbarParts: string[] = [];
+    projectPillBounds = [];
+    let currentPillX = 12; // Starts after " Projects: " (1-indexed start is 12)
+
+    for (let pi = 0; pi < projectList.length; pi++) {
+      const prj = projectList[pi];
+      const isSelected = selectedProjectFilter === prj;
+      const count =
+        prj === null
+          ? sessions.length
+          : sessions.filter(
+              (s) => projectName(s).toLowerCase() === prj.toLowerCase(),
+            ).length;
+      const label = prj === null ? `ALL (${count})` : `${prj} (${count})`;
+
+      let renderedPill = '';
+      if (isSelected) {
+        renderedPill =
+          activePane === 'projects'
+            ? c.bgFocusTag(` ► ${label} ◄ `)
+            : c.bgTabActive(` ${label} `);
+      } else {
+        renderedPill = c.bgTabInactive(` ${label} `);
+      }
+
+      toolbarParts.push(renderedPill);
+      const pillLen = stripAnsi(renderedPill).length;
+      projectPillBounds.push({
+        proj: prj,
+        startX: currentPillX,
+        endX: currentPillX + pillLen,
+      });
+      currentPillX += pillLen + 2; // 2 spaces between pills
+    }
+
+    const toolbarPrefix =
+      activePane === 'projects'
+        ? c.bold(c.brightCyan(' Projects: '))
+        : c.bold(' Projects: ');
+    const toolbarLine = `${toolbarPrefix}${toolbarParts.join('  ')}`;
+    buffer.push(
+      move(2, 1) +
+        '\x1b[K' +
+        c.bgHeader(toolbarLine.padEnd(cols - 1).slice(0, cols)),
+    );
+
+    // 3. Vertical Divider Line (starts from row 3)
     const dividerColor = activePane === 'sidebar' ? c.cyan : c.darkGray;
-    for (let r = 2; r < rows; r++) {
+    for (let r = 3; r < rows; r++) {
       buffer.push(move(r, sidebarWidth + 1) + dividerColor('│'));
     }
 
-    // 4. Sidebar Search / Filter Bar
-    const prjTag = selectedProjectFilter ? ` [PRJ: ${selectedProjectFilter}]` : '';
+    // 4. Sidebar Title (Row 3) & Divider (Row 4)
+    const sidebarTitleColor = activePane === 'sidebar' ? c.cyan : c.dim;
     const searchStr = isSearching
       ? `🔍 SEARCH: ${searchQuery}_`
-      : `🔍 FILTER: ${searchQuery || 'all sessions'}${prjTag}`;
-    const sidebarTitleColor = activePane === 'sidebar' ? c.cyan : c.dim;
-    buffer.push(move(2, 2) + '\x1b[K' + sidebarTitleColor(c.bold(searchStr.slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2))));
-    buffer.push(move(3, 1) + '\x1b[K' + c.darkGray('─'.repeat(sidebarWidth)));
+      : `SESSIONS INVENTORY [${filtered.length} / ${sessions.length}]`;
+    buffer.push(
+      move(3, 2) +
+        '\x1b[K' +
+        sidebarTitleColor(
+          c.bold(searchStr.slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2)),
+        ),
+    );
+    buffer.push(move(4, 1) + '\x1b[K' + c.darkGray('─'.repeat(sidebarWidth)));
 
-    // 5. Sidebar Session List
-    for (let i = 0; i < visibleItemCount; i++) {
-      const idx = scrollOffset + i;
-      const rowStart = 4 + (i * 2);
-      if (idx >= filtered.length || rowStart + 1 >= rows) break;
-
-      const session = filtered[idx];
-      const isSelected = idx === selectedIndex;
-      const cleanTitle = sanitize(displayName(session));
-      const tokens = latestTokens(session);
-      const subCount = getSubagentCount(session);
-      const pName = projectName(session);
-
-      const subagentsStr = subCount > 0 ? ` · 🤖${subCount}` : '';
-      const prjStr = pName && pName !== 'General / No Project' && !selectedProjectFilter ? ` · 📁${pName.slice(0, 10)}` : '';
-      const sub = `${date(session.startedAt)} · ${duration(session.startedAt, session.updatedAt)}${tokens ? ' · ' + formatCompactTokens(tokens) + 't' : ''}${subagentsStr}${prjStr}`;
-
-      const icon = isSelected ? (activePane === 'sidebar' ? '▶ ' : '👉 ') : '◈ ';
-      const line1Text = (icon + cleanTitle).slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2);
-      const line2Text = (`   ${sub}`).slice(0, sidebarWidth - 2).padEnd(sidebarWidth - 2);
-
-      if (isSelected) {
-        buffer.push(move(rowStart, 1) + '\x1b[K' + c.bgSelected(line1Text));
-        buffer.push(move(rowStart + 1, 1) + '\x1b[K' + c.bgSelected(line2Text));
+    // 5. Sidebar Session List (line-based with project grouping)
+    for (let i = 0; i < sidebarVisibleRows; i++) {
+      const lineIdx = scrollOffset + i;
+      const r = sidebarContentStart + i;
+      if (r >= rows - 1) break;
+      if (lineIdx < sidebarDisplayLines.length) {
+        const item = sidebarDisplayLines[lineIdx];
+        buffer.push(
+          move(r, 1) +
+            '\x1b[K' +
+            (item.sel ? c.bgSelected(item.plain) : item.colored),
+        );
       } else {
-        buffer.push(move(rowStart, 1) + '\x1b[K' + c.white(line1Text));
-        buffer.push(move(rowStart + 1, 1) + '\x1b[K' + c.gray(line2Text));
+        buffer.push(move(r, 1) + '\x1b[K');
       }
-    }
-
-    // Clear empty rows below sidebar list
-    const maxSidebarRow = 4 + (visibleItemCount * 2);
-    for (let r = maxSidebarRow; r < rows; r++) {
-      buffer.push(move(r, 1) + '\x1b[K');
     }
 
     // 6. Right Panel Header & Navigation Tabs (7 tabs)
     const selectedSession = filtered[selectedIndex];
-    const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Changes ', ' Subagents ', ' Metadata '];
-    const tabHeaders = tabLabels.map((label, idx) => {
-      const shortcut = `[${idx + 1}]`;
-      const fullLabel = `${shortcut}${label}`;
-      return idx === activeTab ? c.bgTabActive(fullLabel) : c.bgTabInactive(fullLabel);
-    }).join(' ');
+    const tabLabels = [
+      ' Overview ',
+      ' Activity ',
+      ' Analytics ',
+      ' Tools ',
+      ' Changes ',
+      ' Subagents ',
+      ' Metadata ',
+    ];
+    const tabHeaders = tabLabels
+      .map((label, idx) => {
+        const shortcut = `[${idx + 1}]`;
+        const fullLabel = `${shortcut}${label}`;
+        return idx === activeTab
+          ? c.bgTabActive(fullLabel)
+          : c.bgTabInactive(fullLabel);
+      })
+      .join(' ');
 
-    buffer.push(move(2, sidebarWidth + 3) + '\x1b[K' + tabHeaders);
-    buffer.push(move(3, sidebarWidth + 2) + '\x1b[K' + c.darkGray('─'.repeat(mainWidth)));
+    buffer.push(move(3, sidebarWidth + 3) + '\x1b[K' + tabHeaders);
+    buffer.push(
+      move(4, sidebarWidth + 2) + '\x1b[K' + c.darkGray('─'.repeat(mainWidth)),
+    );
 
     // 7. Right Panel Main Content Area
     if (!selectedSession) {
-      buffer.push(move(5, sidebarWidth + 4) + '\x1b[K' + c.dim('No sessions match the current filter.'));
+      buffer.push(
+        move(6, sidebarWidth + 4) +
+          '\x1b[K' +
+          c.dim('No sessions match the current filter.'),
+      );
     } else {
       const currentLines: string[] = [];
 
       if (activeTab === 0) {
         // OVERVIEW TAB
-        currentLines.push(c.brightCyan(c.bold(`◈ ${sanitize(displayName(selectedSession))}`)));
+        currentLines.push(
+          c.brightCyan(c.bold(`◈ ${sanitize(displayName(selectedSession))}`)),
+        );
         currentLines.push(c.gray(`ID: ${selectedSession.id}`));
         currentLines.push('');
 
-        currentLines.push(...formatCard('WORKSPACE & TIMELINE', c.cyan, [
-          ...(selectedSession.cwd || selectedSession.projectName ? [
-            `Project Workspace   ${projectName(selectedSession)}`,
-            ...(selectedSession.cwd ? [`Directory Path      ${selectedSession.cwd}`] : []),
-          ] : []),
-          `Started             ${selectedSession.startedAt ?? 'unknown'}`,
-          `Updated             ${selectedSession.updatedAt ?? 'unknown'}`,
-          `Duration            ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,
-          `Title Source        ${selectedSession.displayTitle.source}`,
-          ...(selectedSession.provider ? [`Provider            ${selectedSession.provider.toUpperCase()}`] : []),
-        ], mainWidth - 4));
+        currentLines.push(
+          ...formatCard(
+            'WORKSPACE & TIMELINE',
+            c.cyan,
+            [
+              ...(selectedSession.cwd || selectedSession.projectName
+                ? [
+                    `Project Workspace   ${projectName(selectedSession)}`,
+                    ...(selectedSession.cwd
+                      ? [`Directory Path      ${selectedSession.cwd}`]
+                      : []),
+                  ]
+                : []),
+              `Started             ${selectedSession.startedAt ?? 'unknown'}`,
+              `Updated             ${selectedSession.updatedAt ?? 'unknown'}`,
+              `Duration            ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,
+              `Title Source        ${selectedSession.displayTitle.source}`,
+              ...(selectedSession.provider
+                ? [
+                    `Provider            ${selectedSession.provider.toUpperCase()}`,
+                  ]
+                : []),
+            ],
+            mainWidth - 4,
+          ),
+        );
 
         currentLines.push('');
         const token = selectedSession.token.last ?? selectedSession.token.total;
-        currentLines.push(...formatCard('TOKEN METRICS', c.yellow, [
-          `Total Tokens        ${formatNumber(token?.totalTokens)} (${formatCompactTokens(token?.totalTokens)})`,
-          `Cached Input        ${formatNumber(token?.cachedInputTokens)}`,
-          `Output Tokens       ${formatNumber(token?.outputTokens)}`,
-          `Reasoning Tokens    ${formatNumber(token?.reasoningOutputTokens)}`,
-        ], mainWidth - 4));
+        currentLines.push(
+          ...formatCard(
+            'TOKEN METRICS',
+            c.yellow,
+            [
+              `Total Tokens        ${formatNumber(token?.totalTokens)} (${formatCompactTokens(token?.totalTokens)})`,
+              `Cached Input        ${formatNumber(token?.cachedInputTokens)}`,
+              `Output Tokens       ${formatNumber(token?.outputTokens)}`,
+              `Reasoning Tokens    ${formatNumber(token?.reasoningOutputTokens)}`,
+            ],
+            mainWidth - 4,
+          ),
+        );
 
         currentLines.push('');
         const subCount = getSubagentCount(selectedSession);
-        currentLines.push(...formatCard('EXECUTION & SUBAGENTS FLEET', c.purple, [
-          `Subagents Fleet     ${subCount > 0 ? `${subCount} spawned` : 'none'}`,
-          `Tool Calls          ${selectedSession.tools.calls} calls (${selectedSession.tools.outputs} outputs)`,
-          `Task Status         ${selectedSession.taskCount} started · ${selectedSession.completedTaskCount} completed · ${selectedSession.abortedTaskCount} aborted`,
-          `Compactions         ${selectedSession.compactionCount} compactions · ${selectedSession.rollbackCount} rollbacks`,
-        ], mainWidth - 4));
+        currentLines.push(
+          ...formatCard(
+            'EXECUTION & SUBAGENTS FLEET',
+            c.purple,
+            [
+              `Subagents Fleet     ${subCount > 0 ? `${subCount} spawned` : 'none'}`,
+              `Tool Calls          ${selectedSession.tools.calls} calls (${selectedSession.tools.outputs} outputs)`,
+              `Task Status         ${selectedSession.taskCount} started · ${selectedSession.completedTaskCount} completed · ${selectedSession.abortedTaskCount} aborted`,
+              `Compactions         ${selectedSession.compactionCount} compactions · ${selectedSession.rollbackCount} rollbacks`,
+            ],
+            mainWidth - 4,
+          ),
+        );
 
         if (currentDetail) {
           const stats = computeUsageStats(currentDetail);
           const profile = computeToolUsageProfile(currentDetail);
           currentLines.push('');
-          currentLines.push(...formatCard('CONTEXT EFFICIENCY & CODE EDITS', c.emerald, [
-            `Context Meter       ${progressBar(stats.saturationPct, 16)}`,
-            `Cache Hit Ratio     ${stats.cacheHitRatio}%`,
-            `Reasoning Ratio     ${stats.reasoningRatio}%`,
-            `Code Edits          ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} files`,
-          ], mainWidth - 4));
+          currentLines.push(
+            ...formatCard(
+              'CONTEXT EFFICIENCY & CODE EDITS',
+              c.emerald,
+              [
+                `Context Meter       ${progressBar(stats.saturationPct, 16)}`,
+                `Cache Hit Ratio     ${stats.cacheHitRatio}%`,
+                `Reasoning Ratio     ${stats.reasoningRatio}%`,
+                `Code Edits          ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} files`,
+              ],
+              mainWidth - 4,
+            ),
+          );
         }
-
       } else if (activeTab === 1) {
         // ACTIVITY TAB (CONVERSATION TIMELINE WITH ROLE FILTERING & RICH BREAKDOWN)
         if (loadingDetail) {
-          currentLines.push(c.yellow('⚡ Loading session activity transcript...'));
+          currentLines.push(
+            c.yellow('⚡ Loading session activity transcript...'),
+          );
         } else if (!currentDetail || !currentDetail.conversation.length) {
           currentLines.push(c.dim('No conversation activity records found.'));
         } else {
-          const filterLabel = roleFilter === 'agent'
-            ? 'CODEX AGENT'
-            : roleFilter === 'subagent'
-              ? 'SUBAGENTS'
-              : roleFilter.toUpperCase();
-          currentLines.push(c.brightCyan(c.bold(`CONVERSATION & ACTIVITY TIMELINE`)) + c.gray(`  [ FILTER: ${filterLabel} · Press 'r' to cycle ]`));
+          const filterLabel =
+            roleFilter === 'agent'
+              ? 'CODEX AGENT'
+              : roleFilter === 'subagent'
+                ? 'SUBAGENTS'
+                : roleFilter.toUpperCase();
+          currentLines.push(
+            c.brightCyan(c.bold(`CONVERSATION & ACTIVITY TIMELINE`)) +
+              c.gray(`  [ FILTER: ${filterLabel} · Press 'r' to cycle ]`),
+          );
           currentLines.push('');
 
           let conversationList = currentDetail.conversation;
-          if (roleFilter === 'user') conversationList = conversationList.filter((m) => m.role === 'user' && m.kind !== 'internal_review');
-          else if (roleFilter === 'agent') conversationList = conversationList.filter((m) => m.role === 'assistant');
-          else if (roleFilter === 'review') conversationList = conversationList.filter((m) => m.kind === 'internal_review');
+          if (roleFilter === 'user')
+            conversationList = conversationList.filter(
+              (m) => m.role === 'user' && m.kind !== 'internal_review',
+            );
+          else if (roleFilter === 'agent')
+            conversationList = conversationList.filter(
+              (m) => m.role === 'assistant',
+            );
+          else if (roleFilter === 'review')
+            conversationList = conversationList.filter(
+              (m) => m.kind === 'internal_review',
+            );
           else if (roleFilter === 'subagent') {
             conversationList = conversationList.filter((m) =>
-              m.activity?.tools.some((t) => t.kind === 'subagent' || t.name.toLowerCase().includes('subagent') || t.name.toLowerCase().includes('agent'))
+              m.activity?.tools.some(
+                (t) =>
+                  t.kind === 'subagent' ||
+                  t.name.toLowerCase().includes('subagent') ||
+                  t.name.toLowerCase().includes('agent'),
+              ),
             );
           }
 
           if (conversationList.length === 0) {
-            currentLines.push(c.dim(`No messages match the active role filter [${filterLabel}].`));
+            currentLines.push(
+              c.dim(
+                `No messages match the active role filter [${filterLabel}].`,
+              ),
+            );
           } else {
             for (const item of conversationList) {
               if (item.kind === 'internal_review') {
-                const textLines = item.text ? item.text.split('\n') : ['(empty review entry)'];
-                currentLines.push(...formatCard('🛡️ INTERNAL REVIEW', c.yellow, textLines, mainWidth - 4));
+                const textLines = item.text
+                  ? item.text.split('\n')
+                  : ['(empty review entry)'];
+                currentLines.push(
+                  ...formatCard(
+                    '🛡️ INTERNAL REVIEW',
+                    c.yellow,
+                    textLines,
+                    mainWidth - 4,
+                  ),
+                );
                 currentLines.push('');
               } else if (item.role === 'user') {
-                const textLines = item.text ? item.text.split('\n') : ['(empty message)'];
-                currentLines.push(...formatCard('👤 USER', c.emerald, textLines, mainWidth - 4));
+                const textLines = item.text
+                  ? item.text.split('\n')
+                  : ['(empty message)'];
+                currentLines.push(
+                  ...formatCard('👤 USER', c.emerald, textLines, mainWidth - 4),
+                );
                 currentLines.push('');
               } else if (item.role === 'assistant') {
                 const cardLines: string[] = [];
@@ -585,14 +929,21 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
                 const totalTurnTokens = activityTotal(item.activity);
                 if (totalTurnTokens > 0) {
-                  let inTokens = 0, cachedTokens = 0, outTokens = 0, reasoningTokens = 0;
+                  let inTokens = 0,
+                    cachedTokens = 0,
+                    outTokens = 0,
+                    reasoningTokens = 0;
                   for (const req of item.activity?.modelRequests ?? []) {
                     inTokens += req.usage.inputTokens ?? 0;
                     cachedTokens += req.usage.cachedInputTokens ?? 0;
                     outTokens += req.usage.outputTokens ?? 0;
                     reasoningTokens += req.usage.reasoningOutputTokens ?? 0;
                   }
-                  cardLines.push(c.yellow(`Tokens: ${formatNumber(totalTurnTokens)} total (In: ${formatNumber(inTokens)}, Cached: ${formatNumber(cachedTokens)}, Out: ${formatNumber(outTokens)}, Reasoning: ${formatNumber(reasoningTokens)})`));
+                  cardLines.push(
+                    c.yellow(
+                      `Tokens: ${formatNumber(totalTurnTokens)} total (In: ${formatNumber(inTokens)}, Cached: ${formatNumber(cachedTokens)}, Out: ${formatNumber(outTokens)}, Reasoning: ${formatNumber(reasoningTokens)})`,
+                    ),
+                  );
                   cardLines.push('');
                 }
 
@@ -602,10 +953,18 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
                 if (item.activity?.tools.length) {
                   cardLines.push('');
-                  cardLines.push(c.purple(`⚡ Tools Executed (${item.activity.tools.length}):`));
+                  cardLines.push(
+                    c.purple(
+                      `⚡ Tools Executed (${item.activity.tools.length}):`,
+                    ),
+                  );
                   for (const tool of item.activity.tools) {
-                    const durStr = tool.durationMs ? `${tool.durationMs}ms` : 'exec';
-                    const isSub = tool.kind === 'subagent' || tool.name.toLowerCase().includes('subagent');
+                    const durStr = tool.durationMs
+                      ? `${tool.durationMs}ms`
+                      : 'exec';
+                    const isSub =
+                      tool.kind === 'subagent' ||
+                      tool.name.toLowerCase().includes('subagent');
                     const prefix = isSub ? '🤖 [SUBAGENT] ' : '• ';
                     cardLines.push(`  ${prefix}${tool.name} (${durStr})`);
                   }
@@ -616,22 +975,32 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
                   cardLines.push(c.emerald(`✏️ Code Edits:`));
                   for (const edit of item.activity.edits) {
                     for (const f of edit.files) {
-                      cardLines.push(`  • ${f.path}${f.operation ? ` (${f.operation})` : ''}`);
+                      cardLines.push(
+                        `  • ${f.path}${f.operation ? ` (${f.operation})` : ''}`,
+                      );
                     }
                   }
                 }
 
-                currentLines.push(...formatCard('🤖 CODEX AGENT', c.cyan, cardLines, mainWidth - 4));
+                currentLines.push(
+                  ...formatCard(
+                    '🤖 CODEX AGENT',
+                    c.cyan,
+                    cardLines,
+                    mainWidth - 4,
+                  ),
+                );
                 currentLines.push('');
               }
             }
           }
         }
-
       } else if (activeTab === 2) {
         // ANALYTICS TAB (RESOURCE CONSUMPTION & TOKEN USAGE VISUALIZER)
         if (loadingDetail) {
-          currentLines.push(c.yellow('⚡ Computing session analytics & token profile...'));
+          currentLines.push(
+            c.yellow('⚡ Computing session analytics & token profile...'),
+          );
         } else if (!currentDetail) {
           currentLines.push(c.dim('No session detail loaded for analytics.'));
         } else {
@@ -639,25 +1008,41 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           const topSpikes = computeTopTokenTurns(currentDetail, stats);
           const profile = computeToolUsageProfile(currentDetail);
 
-          currentLines.push(c.brightCyan(c.bold('📊 SESSION RESOURCE & TOKEN ANALYTICS')));
+          currentLines.push(
+            c.brightCyan(c.bold('📊 SESSION RESOURCE & TOKEN ANALYTICS')),
+          );
           currentLines.push('');
 
           // 1. CONTEXT WINDOW & CACHE EFFICIENCY
-          currentLines.push(...formatCard('CONTEXT WINDOW & CACHE EFFICIENCY', c.yellow, [
-            `Saturation Meter ${progressBar(stats.saturationPct, 22)}`,
-            `Window Capacity  ${formatNumber(stats.latestTotal)} / ${formatNumber(stats.maxContext)} tokens`,
-            `Cache Hit Ratio  ${stats.cacheHitRatio}% (${formatNumber(stats.latestCached)} / ${formatNumber(stats.latestInput)} input tokens)`,
-            `Reasoning Ratio  ${stats.reasoningRatio}% (${formatNumber(stats.latestReasoning)} / ${formatNumber(stats.latestOutput)} output tokens)`,
-          ], mainWidth - 4));
+          currentLines.push(
+            ...formatCard(
+              'CONTEXT WINDOW & CACHE EFFICIENCY',
+              c.yellow,
+              [
+                `Saturation Meter ${progressBar(stats.saturationPct, 22)}`,
+                `Window Capacity  ${formatNumber(stats.latestTotal)} / ${formatNumber(stats.maxContext)} tokens`,
+                `Cache Hit Ratio  ${stats.cacheHitRatio}% (${formatNumber(stats.latestCached)} / ${formatNumber(stats.latestInput)} input tokens)`,
+                `Reasoning Ratio  ${stats.reasoningRatio}% (${formatNumber(stats.latestReasoning)} / ${formatNumber(stats.latestOutput)} output tokens)`,
+              ],
+              mainWidth - 4,
+            ),
+          );
           currentLines.push('');
 
           // 2. TIME & RESOURCE PROFILE
-          currentLines.push(...formatCard('TIME & RESOURCE PROFILE', c.purple, [
-            `Tool Execution   ${stats.totalToolMs} ms measured tool work`,
-            `Overhead/Model   ${stats.totalOtherMs} ms model/system time`,
-            `Code Edits       ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} unique files`,
-            `Snapshots        ${stats.snapshotCount} usage snapshots · ${stats.modelStepCount} model steps`,
-          ], mainWidth - 4));
+          currentLines.push(
+            ...formatCard(
+              'TIME & RESOURCE PROFILE',
+              c.purple,
+              [
+                `Tool Execution   ${stats.totalToolMs} ms measured tool work`,
+                `Overhead/Model   ${stats.totalOtherMs} ms model/system time`,
+                `Code Edits       ${profile.totalEditsCount} edits across ${profile.uniqueEditedFilesCount} unique files`,
+                `Snapshots        ${stats.snapshotCount} usage snapshots · ${stats.modelStepCount} model steps`,
+              ],
+              mainWidth - 4,
+            ),
+          );
           currentLines.push('');
 
           // 3. TOP TOKEN-HEAVY TURN SPIKES (TOP 5)
@@ -666,13 +1051,26 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
             spikeLines.push('No token usage spikes recorded.');
           } else {
             for (const spike of topSpikes) {
-              spikeLines.push(c.bold(`Turn #${spike.turnNumber} — ${formatNumber(spike.totalTokens)} tokens (${spike.shareOfSessionPct}% of session)`));
-              spikeLines.push(`  Model: ${spike.modelName} | In: ${formatNumber(spike.input)} (${formatNumber(spike.cached)} cached) | Out: ${formatNumber(spike.output)}`);
+              spikeLines.push(
+                c.bold(
+                  `Turn #${spike.turnNumber} — ${formatNumber(spike.totalTokens)} tokens (${spike.shareOfSessionPct}% of session)`,
+                ),
+              );
+              spikeLines.push(
+                `  Model: ${spike.modelName} | In: ${formatNumber(spike.input)} (${formatNumber(spike.cached)} cached) | Out: ${formatNumber(spike.output)}`,
+              );
               spikeLines.push(`  Prompt: "${spike.promptSnippet}"`);
               spikeLines.push('');
             }
           }
-          currentLines.push(...formatCard('TOP TOKEN-HEAVY TURNS (SPIKES)', c.red, spikeLines, mainWidth - 4));
+          currentLines.push(
+            ...formatCard(
+              'TOP TOKEN-HEAVY TURNS (SPIKES)',
+              c.red,
+              spikeLines,
+              mainWidth - 4,
+            ),
+          );
           currentLines.push('');
 
           // 4. TOOL INVOCATION PROFILE
@@ -680,15 +1078,25 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           if (profile.tools.length === 0) {
             toolLines.push('No tools invoked in this session.');
           } else {
-            toolLines.push(`Total Tool Invocations: ${profile.totalInvocations}`);
+            toolLines.push(
+              `Total Tool Invocations: ${profile.totalInvocations}`,
+            );
             toolLines.push('');
             for (const item of profile.tools) {
-              toolLines.push(`• ${item.name} (${item.kind}): ${item.count} calls · ${item.durationMs} ms total`);
+              toolLines.push(
+                `• ${item.name} (${item.kind}): ${item.count} calls · ${item.durationMs} ms total`,
+              );
             }
           }
-          currentLines.push(...formatCard('TOOL INVOCATION & TIMING PROFILE', c.emerald, toolLines, mainWidth - 4));
+          currentLines.push(
+            ...formatCard(
+              'TOOL INVOCATION & TIMING PROFILE',
+              c.emerald,
+              toolLines,
+              mainWidth - 4,
+            ),
+          );
         }
-
       } else if (activeTab === 3) {
         // TOOLS TAB (TOOL EXECUTIONS & DETAILS)
         if (loadingDetail) {
@@ -703,25 +1111,32 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
             if (msg.activity?.tools?.length) {
               for (const tool of msg.activity.tools) {
                 count++;
-                const statusSymbol = tool.status === 'completed' || tool.status === '0'
-                  ? c.emerald('✓ completed')
-                  : tool.status
-                    ? c.red(`✗ ${tool.status}`)
-                    : c.dim('exec');
+                const statusSymbol =
+                  tool.status === 'completed' || tool.status === '0'
+                    ? c.emerald('✓ completed')
+                    : tool.status
+                      ? c.red(`✗ ${tool.status}`)
+                      : c.dim('exec');
                 const title = `⚙️ TOOL #${count}: ${tool.name} [${statusSymbol}]`;
                 const content: string[] = [];
                 content.push(`Kind:     ${tool.kind}`);
-                content.push(`Duration: ${tool.durationMs !== undefined ? tool.durationMs + 'ms' : '—'}`);
-                if (tool.input) content.push(`Input:    ${sanitize(tool.input)}`);
-                if (tool.output) content.push(`Output:   ${sanitize(tool.output)}`);
-                currentLines.push(...formatCard(title, c.purple, content, mainWidth - 4));
+                content.push(
+                  `Duration: ${tool.durationMs !== undefined ? tool.durationMs + 'ms' : '—'}`,
+                );
+                if (tool.input)
+                  content.push(`Input:    ${sanitize(tool.input)}`);
+                if (tool.output)
+                  content.push(`Output:   ${sanitize(tool.output)}`);
+                currentLines.push(
+                  ...formatCard(title, c.purple, content, mainWidth - 4),
+                );
                 currentLines.push('');
               }
             }
           }
-          if (!count) currentLines.push(c.dim('No tool execution records found.'));
+          if (!count)
+            currentLines.push(c.dim('No tool execution records found.'));
         }
-
       } else if (activeTab === 4) {
         // CHANGES / DIFFS TAB
         if (loadingDetail) {
@@ -729,15 +1144,26 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         } else if (!currentDetail) {
           currentLines.push(c.dim('No session detail loaded for changes.'));
         } else {
-          currentLines.push(c.emerald(c.bold('✏️ FILE CHANGES & CODE PATCHES')));
+          currentLines.push(
+            c.emerald(c.bold('✏️ FILE CHANGES & CODE PATCHES')),
+          );
           currentLines.push('');
 
-          const allEdits = currentDetail.conversation.flatMap((m) => m.activity?.edits ?? []);
-          const fileDiffsMap = new Map<string, { path: string; operation?: string; diffs: string[] }>();
+          const allEdits = currentDetail.conversation.flatMap(
+            (m) => m.activity?.edits ?? [],
+          );
+          const fileDiffsMap = new Map<
+            string,
+            { path: string; operation?: string; diffs: string[] }
+          >();
 
           for (const edit of allEdits) {
             for (const f of edit.files) {
-              const existing = fileDiffsMap.get(f.path) ?? { path: f.path, operation: f.operation, diffs: [] };
+              const existing = fileDiffsMap.get(f.path) ?? {
+                path: f.path,
+                operation: f.operation,
+                diffs: [],
+              };
               if (f.diff) existing.diffs.push(f.diff);
               if (f.operation) existing.operation = f.operation;
               fileDiffsMap.set(f.path, existing);
@@ -745,18 +1171,30 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           }
 
           if (fileDiffsMap.size === 0) {
-            currentLines.push(c.dim('No file edits or code patches recorded in this session.'));
+            currentLines.push(
+              c.dim('No file edits or code patches recorded in this session.'),
+            );
           } else {
-            currentLines.push(c.yellow(`Modified Files: ${fileDiffsMap.size} files across ${allEdits.length} edit operations`));
+            currentLines.push(
+              c.yellow(
+                `Modified Files: ${fileDiffsMap.size} files across ${allEdits.length} edit operations`,
+              ),
+            );
             currentLines.push('');
 
             for (const [filePath, info] of fileDiffsMap.entries()) {
-              const op = info.operation ? `[${info.operation.toUpperCase()}] ` : '';
+              const op = info.operation
+                ? `[${info.operation.toUpperCase()}] `
+                : '';
               const title = `📄 ${op}${filePath}`;
               const diffLines: string[] = [];
 
               if (info.diffs.length === 0) {
-                diffLines.push(c.dim('(File modified without unified diff snippet recorded)'));
+                diffLines.push(
+                  c.dim(
+                    '(File modified without unified diff snippet recorded)',
+                  ),
+                );
               } else {
                 for (const rawDiff of info.diffs) {
                   const lines = rawDiff.split('\n');
@@ -775,19 +1213,24 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
                 }
               }
 
-              currentLines.push(...formatCard(title, c.emerald, diffLines, mainWidth - 4));
+              currentLines.push(
+                ...formatCard(title, c.emerald, diffLines, mainWidth - 4),
+              );
               currentLines.push('');
             }
           }
         }
-
       } else if (activeTab === 5) {
         // SUBAGENTS TAB
         currentLines.push(c.purple(c.bold('🤖 SUBAGENTS FLEET HIERARCHY')));
         currentLines.push('');
 
-        const subagents = (selectedSession.relationships ?? []).filter((r) => r.type === 'subagent');
-        const parents = (selectedSession.relationships ?? []).filter((r) => r.type === 'parent');
+        const subagents = (selectedSession.relationships ?? []).filter(
+          (r) => r.type === 'subagent',
+        );
+        const parents = (selectedSession.relationships ?? []).filter(
+          (r) => r.type === 'parent',
+        );
 
         const relLines: string[] = [];
         if (parents.length > 0) {
@@ -813,7 +1256,14 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
         relLines.push(`Subagent Activity Events: ${subEventsCount}`);
 
-        currentLines.push(...formatCard('FLEET TOPOLOGY & COUNTS', c.purple, relLines, mainWidth - 4));
+        currentLines.push(
+          ...formatCard(
+            'FLEET TOPOLOGY & COUNTS',
+            c.purple,
+            relLines,
+            mainWidth - 4,
+          ),
+        );
         currentLines.push('');
 
         if (currentDetail) {
@@ -821,10 +1271,22 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           for (const m of currentDetail.conversation) {
             if (m.activity?.tools) {
               for (const t of m.activity.tools) {
-                if (t.kind === 'subagent' || t.name.toLowerCase().includes('subagent') || t.name.toLowerCase().includes('agent')) {
-                  subagentTools.push(`• ${t.name} (${t.durationMs ? `${t.durationMs}ms` : 'exec'})`);
-                  if (t.input) subagentTools.push(`  Input: ${sanitize(t.input).slice(0, 120)}`);
-                  if (t.output) subagentTools.push(`  Result: ${sanitize(t.output).slice(0, 120)}`);
+                if (
+                  t.kind === 'subagent' ||
+                  t.name.toLowerCase().includes('subagent') ||
+                  t.name.toLowerCase().includes('agent')
+                ) {
+                  subagentTools.push(
+                    `• ${t.name} (${t.durationMs ? `${t.durationMs}ms` : 'exec'})`,
+                  );
+                  if (t.input)
+                    subagentTools.push(
+                      `  Input: ${sanitize(t.input).slice(0, 120)}`,
+                    );
+                  if (t.output)
+                    subagentTools.push(
+                      `  Result: ${sanitize(t.output).slice(0, 120)}`,
+                    );
                   subagentTools.push('');
                 }
               }
@@ -832,12 +1294,20 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           }
 
           if (subagentTools.length > 0) {
-            currentLines.push(...formatCard('SUBAGENT ACTIVITY TRANSCRIPT', c.cyan, subagentTools, mainWidth - 4));
+            currentLines.push(
+              ...formatCard(
+                'SUBAGENT ACTIVITY TRANSCRIPT',
+                c.cyan,
+                subagentTools,
+                mainWidth - 4,
+              ),
+            );
           } else {
-            currentLines.push(c.dim('No dedicated subagent tool invocations in conversation.'));
+            currentLines.push(
+              c.dim('No dedicated subagent tool invocations in conversation.'),
+            );
           }
         }
-
       } else if (activeTab === 6) {
         // METADATA TAB
         currentLines.push(c.gray('RAW SESSION INVENTORY METADATA:'));
@@ -847,7 +1317,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       }
 
       // Render main content area with Line Erase (\x1b[K) and scroll clamping
-      const mainHeight = rows - 5;
+      const mainHeight = rows - 6;
       const maxScroll = Math.max(0, currentLines.length - mainHeight);
       if (rightScrollOffset > maxScroll) rightScrollOffset = maxScroll;
       if (rightScrollOffset < 0) rightScrollOffset = 0;
@@ -855,21 +1325,36 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       for (let r = 0; r < mainHeight; r++) {
         const lineIdx = rightScrollOffset + r;
         const lineStr = currentLines[lineIdx];
-        buffer.push(move(4 + r, sidebarWidth + 3) + '\x1b[K' + (lineStr ?? ''));
+        buffer.push(move(5 + r, sidebarWidth + 3) + '\x1b[K' + (lineStr ?? ''));
       }
     }
 
     // 8. Footer Status Bar
     if (notificationMessage) {
-      buffer.push(move(rows, 1) + '\x1b[K' + c.bgNotice(` ${notificationMessage} `.padEnd(cols - 1).slice(0, cols)));
+      buffer.push(
+        move(rows, 1) +
+          '\x1b[K' +
+          c.bgNotice(
+            ` ${notificationMessage} `.padEnd(cols - 1).slice(0, cols),
+          ),
+      );
     } else {
-      const statusHelp = activePane === 'sidebar'
-        ? ` [TAB/→] Main Pane | [↑/↓] Select Session | [1-7] Tabs | [/] Search | [p] Project | [e] Export | [c] Copy ID | [q] Exit`
-        : ` [TAB] Sidebar | [←/→] Tabs | [↑/↓] Scroll | [1-7] Jump Tab | [r] Role Filter | [p] Project | [e] Export | [q] Exit`;
+      let statusHelp = '';
+      if (activePane === 'projects') {
+        statusHelp = ` [←/→] Choose Project | [↓/ENTER] Go to Sessions | [TAB] Sidebar | [0] All Projects | [q] Exit`;
+      } else if (activePane === 'sidebar') {
+        statusHelp = ` [TAB/→] Main Pane | [←] Projects Bar | [↑/↓] Select Session | [[]] Prev/Next Prj | [1-7] Tabs | [/] Search | [q] Exit`;
+      } else {
+        statusHelp = ` [TAB] Projects Bar | [←/→] Tabs | [↑/↓] Scroll | [1-7] Jump Tab | [r] Role Filter | [[]] Project | [q] Exit`;
+      }
       const footerText = isSearching
         ? ` TYPE FILTER · [ENTER] Save · [ESC] Clear filter`
         : statusHelp;
-      buffer.push(move(rows, 1) + '\x1b[K' + c.bgHeader(footerText.padEnd(cols - 1).slice(0, cols)));
+      buffer.push(
+        move(rows, 1) +
+          '\x1b[K' +
+          c.bgHeader(footerText.padEnd(cols - 1).slice(0, cols)),
+      );
     }
 
     process.stdout.write(buffer.join(''));
@@ -903,34 +1388,46 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const filtered = getFilteredSessions();
     const selectedSession = filtered[selectedIndex];
 
-    if (key.name === 'tab') {
-      activePane = activePane === 'sidebar' ? 'main' : 'sidebar';
+    // Global Project Switch Shortcuts: '[' (prev) / ']' (next) / '<' / '>'
+    if (str === '[' || str === '<') {
+      cycleProject(-1);
+      return;
+    }
+    if (str === ']' || str === '>') {
+      cycleProject(1);
+      return;
+    }
+
+    // Global Tab / Shift+Tab Focus Cycling across 3 panes
+    if (key.name === 'tab' || key.name === 'backtab') {
+      const isBack =
+        key.name === 'backtab' || (key.name === 'tab' && key.shift);
+      if (isBack) {
+        if (activePane === 'projects') activePane = 'main';
+        else if (activePane === 'main') activePane = 'sidebar';
+        else activePane = 'projects';
+      } else {
+        if (activePane === 'projects') activePane = 'sidebar';
+        else if (activePane === 'sidebar') activePane = 'main';
+        else activePane = 'projects';
+      }
       render();
       return;
     }
 
-    // Toggle / Cycle Project Filter with 'p'
+    // Toggle / Cycle Project Filter with 'p' / 'P'
     if (str === 'p') {
-      if (allProjects.length === 0) {
-        notify('No named projects found in session inventory.');
-      } else if (!selectedProjectFilter) {
-        selectedProjectFilter = allProjects[0];
-        notify(`Filtered by Project: ${selectedProjectFilter}`);
-      } else {
-        const curIdx = allProjects.indexOf(selectedProjectFilter);
-        if (curIdx >= 0 && curIdx < allProjects.length - 1) {
-          selectedProjectFilter = allProjects[curIdx + 1];
-          notify(`Filtered by Project: ${selectedProjectFilter}`);
-        } else {
-          selectedProjectFilter = null;
-          notify('Cleared Project Filter (showing all sessions)');
-        }
-      }
-      selectedIndex = 0;
-      scrollOffset = 0;
-      const newFiltered = getFilteredSessions();
-      if (newFiltered[0]) loadDetail(newFiltered[0]);
-      render();
+      cycleProject(1);
+      return;
+    }
+    if (str === 'P') {
+      cycleProject(-1);
+      return;
+    }
+
+    // 0 key: Instant reset to ALL projects
+    if (str === '0') {
+      setProjectFilter(null);
       return;
     }
 
@@ -939,7 +1436,9 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         const file = exportSessionJson(currentDetail);
         notify(`Exported session JSON to: ${file}`);
       } catch (err) {
-        notify(`Failed to export session JSON: ${err instanceof Error ? err.message : String(err)}`);
+        notify(
+          `Failed to export session JSON: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
       return;
     }
@@ -950,7 +1449,13 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     }
 
     if ((str === 'r' || str === 'f') && activeTab === 1) {
-      const filters: Array<'all' | 'user' | 'agent' | 'review' | 'subagent'> = ['all', 'user', 'agent', 'review', 'subagent'];
+      const filters: Array<'all' | 'user' | 'agent' | 'review' | 'subagent'> = [
+        'all',
+        'user',
+        'agent',
+        'review',
+        'subagent',
+      ];
       const nextIdx = (filters.indexOf(roleFilter) + 1) % filters.length;
       roleFilter = filters[nextIdx];
       rightScrollOffset = 0;
@@ -958,7 +1463,40 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
       return;
     }
 
+    // --- PANE-SPECIFIC CONTROLS ---
+
+    if (activePane === 'projects') {
+      // PROJECTS TOOLBAR FOCUS
+      if (key.name === 'left' || str === 'h') {
+        cycleProject(-1);
+      } else if (key.name === 'right' || str === 'l') {
+        cycleProject(1);
+      } else if (
+        key.name === 'down' ||
+        key.name === 'return' ||
+        key.name === 'space' ||
+        str === 'j'
+      ) {
+        activePane = 'sidebar';
+        render();
+      } else if (key.name === 'escape') {
+        if (selectedProjectFilter !== null) {
+          setProjectFilter(null);
+        } else {
+          activePane = 'sidebar';
+          render();
+        }
+      } else if (str && str >= '1' && str <= '9') {
+        const prjIdx = parseInt(str, 10) - 1;
+        if (prjIdx < allProjects.length) {
+          setProjectFilter(allProjects[prjIdx]);
+        }
+      }
+      return;
+    }
+
     if (activePane === 'sidebar') {
+      // SIDEBAR FOCUS
       if (key.name === 'up' || str === 'k') {
         if (selectedIndex > 0) {
           selectedIndex--;
@@ -971,11 +1509,21 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           rightScrollOffset = 0;
           if (filtered[selectedIndex]) loadDetail(filtered[selectedIndex]);
         }
-      } else if (key.name === 'right' || str === 'l') {
+      } else if (key.name === 'left' || str === 'h') {
+        activePane = 'projects';
+      } else if (key.name === 'right' || key.name === 'return' || str === 'l') {
         activePane = 'main';
+      } else if (key.name === 'pageup') {
+        selectedIndex = Math.max(0, selectedIndex - 5);
+        rightScrollOffset = 0;
+        if (filtered[selectedIndex]) loadDetail(filtered[selectedIndex]);
+      } else if (key.name === 'pagedown') {
+        selectedIndex = Math.min(filtered.length - 1, selectedIndex + 5);
+        rightScrollOffset = 0;
+        if (filtered[selectedIndex]) loadDetail(filtered[selectedIndex]);
       }
     } else {
-      // Main Content Focus Controls
+      // MAIN CONTENT FOCUS
       if (key.name === 'right' || str === 'l') {
         if (activeTab < 6) {
           activeTab++;
@@ -986,7 +1534,6 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
           activeTab--;
           rightScrollOffset = 0;
         } else {
-          // On first tab (Overview), left arrow switches focus to Sidebar
           activePane = 'sidebar';
         }
       } else if (key.name === 'up' || str === 'k') {
@@ -1047,7 +1594,8 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     const cols = process.stdout.columns || 100;
     const sidebarWidth = Math.min(46, Math.max(32, Math.floor(cols * 0.36)));
 
-    if (btn === 64) { // Scroll Up
+    if (btn === 64) {
+      // Scroll Up
       if (x <= sidebarWidth) {
         if (selectedIndex > 0) {
           selectedIndex--;
@@ -1058,7 +1606,8 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         rightScrollOffset = Math.max(0, rightScrollOffset - 3);
       }
       render();
-    } else if (btn === 65) { // Scroll Down
+    } else if (btn === 65) {
+      // Scroll Down
       if (x <= sidebarWidth) {
         const filtered = getFilteredSessions();
         if (selectedIndex < filtered.length - 1) {
@@ -1069,36 +1618,95 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         rightScrollOffset += 3;
       }
       render();
-    } else if (btn === 0 && isPress) { // Left Click
-      if (x <= sidebarWidth && y >= 4) {
-        activePane = 'sidebar';
-        const clickedIdx = scrollOffset + Math.floor((y - 4) / 2);
-        const filtered = getFilteredSessions();
-        if (clickedIdx >= 0 && clickedIdx < filtered.length) {
-          selectedIndex = clickedIdx;
-          rightScrollOffset = 0;
-          loadDetail(filtered[selectedIndex]);
-          render();
+    } else if (btn === 0 && isPress) {
+      // Left Click
+      if (y === 2) {
+        // Click on Project Toolbar Row 2
+        for (const pill of projectPillBounds) {
+          if (x >= pill.startX && x <= pill.endX) {
+            setProjectFilter(pill.proj);
+            activePane = 'projects';
+            render();
+            break;
+          }
         }
-      } else if (x > sidebarWidth) {
+      } else if (y === 3 && x > sidebarWidth) {
+        // Click Tab Header on Row 3
         activePane = 'main';
-        if (y === 2) { // Click Tab Header
-          const tabLabels = [' Overview ', ' Activity ', ' Analytics ', ' Tools ', ' Changes ', ' Subagents ', ' Metadata '];
-          let currentX = sidebarWidth + 3;
-          let clickedTab = -1;
-          for (let i = 0; i < tabLabels.length; i++) {
-            const tabLen = `[${i + 1}]${tabLabels[i]}`.length;
-            if (x >= currentX && x < currentX + tabLen + 1) {
-              clickedTab = i;
-              break;
-            }
-            currentX += tabLen + 1;
+        const tabLabels = [
+          ' Overview ',
+          ' Activity ',
+          ' Analytics ',
+          ' Tools ',
+          ' Changes ',
+          ' Subagents ',
+          ' Metadata ',
+        ];
+        let currentX = sidebarWidth + 3;
+        let clickedTab = -1;
+        for (let i = 0; i < tabLabels.length; i++) {
+          const tabLen = `[${i + 1}]${tabLabels[i]}`.length;
+          if (x >= currentX && x < currentX + tabLen + 1) {
+            clickedTab = i;
+            break;
           }
-          if (clickedTab !== -1) {
-            activeTab = clickedTab;
+          currentX += tabLen + 1;
+        }
+        if (clickedTab !== -1) {
+          activeTab = clickedTab;
+          rightScrollOffset = 0;
+        }
+        render();
+      } else if (x <= sidebarWidth && y >= 5) {
+        // Click on Sidebar session row
+        activePane = 'sidebar';
+        const filtered = getFilteredSessions();
+        const clickedLineOffset = y - 5 + scrollOffset;
+        // In grouped mode, find matching session index
+        const showGrouped =
+          !selectedProjectFilter &&
+          allProjects.length > 0 &&
+          !searchQuery.trim();
+        if (showGrouped) {
+          let lineCounter = 0;
+          const groupMap = new Map<string, number[]>();
+          for (let i = 0; i < filtered.length; i++) {
+            const key = projectName(filtered[i]) || 'General / No Project';
+            if (!groupMap.has(key)) groupMap.set(key, []);
+            groupMap.get(key)!.push(i);
+          }
+          let foundSessionIdx: number | null = null;
+          for (const [, indices] of groupMap.entries()) {
+            if (lineCounter === clickedLineOffset) break; // Header line
+            lineCounter++;
+            for (const idx of indices) {
+              if (
+                clickedLineOffset >= lineCounter &&
+                clickedLineOffset < lineCounter + 3
+              ) {
+                foundSessionIdx = idx;
+                break;
+              }
+              lineCounter += 3;
+            }
+            if (foundSessionIdx !== null) break;
+          }
+          if (foundSessionIdx !== null && foundSessionIdx < filtered.length) {
+            selectedIndex = foundSessionIdx;
             rightScrollOffset = 0;
+            loadDetail(filtered[selectedIndex]);
+          }
+        } else {
+          const clickedIdx = Math.floor(clickedLineOffset / 2);
+          if (clickedIdx >= 0 && clickedIdx < filtered.length) {
+            selectedIndex = clickedIdx;
+            rightScrollOffset = 0;
+            loadDetail(filtered[selectedIndex]);
           }
         }
+        render();
+      } else if (x > sidebarWidth && y >= 5) {
+        activePane = 'main';
         render();
       }
     }

@@ -183,7 +183,7 @@ button, input {
 	align-items: center;
 	justify-content: space-between;
 	width: 100%;
-	padding: 8px 12px;
+	padding: 8px 14px;
 	background: var(--panel-subtle);
 	border: 0;
 	border-bottom: 1px solid var(--line);
@@ -195,7 +195,7 @@ button, input {
 	transition: background 0.15s ease;
 }
 .project-group-header:hover {
-	background: rgba(99, 102, 241, 0.15);
+	background: rgba(99, 102, 241, 0.12);
 }
 .project-badge {
 	display: inline-flex;

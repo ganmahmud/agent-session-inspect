@@ -1037,7 +1037,7 @@
 										<!-- Project Header Card -->
 										<button
 											type="button"
-											class="project-group-header flex w-full cursor-pointer items-center justify-between px-3.5 py-2.5 transition-colors hover:bg-indigo-500/10"
+											class="project-group-header sticky top-0 z-10 flex w-full cursor-pointer items-center justify-between border-y border-(--line) bg-(--panel)/95 px-3.5 py-2 backdrop-blur-xs transition-colors hover:bg-indigo-500/10"
 											onclick={() => toggleProjectCollapse(group.key)}
 											title={group.path ? `Path: ${group.path}` : group.name}
 										>
@@ -1047,18 +1047,16 @@
 												{:else}
 													<ChevronDown class="h-3.5 w-3.5 text-indigo-400 transition-transform" />
 												{/if}
-												<div
-													class="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-indigo-500/20 text-indigo-400"
-												>
-													<FolderGit2 class="h-3 w-3" />
-												</div>
+												<FolderGit2 class="h-3.5 w-3.5 shrink-0 text-indigo-400" />
 												<div class="min-w-0 text-left">
 													<div
-														class="truncate text-xs font-bold text-(--ink)"
+														class="flex items-center gap-1.5 truncate text-xs font-bold text-(--ink)"
 														title={group.path ? `Project: ${group.name}\nLocation: ${group.path}` : `Project: ${group.name}`}
 													>
 														<span>{group.name}</span>
-														<span class="font-normal opacity-75">({group.sessions.length})</span>
+														<span class="rounded-full bg-indigo-500/15 px-1.5 py-0.2 font-mono text-[10px] font-semibold text-indigo-400">
+															{group.sessions.length}
+														</span>
 													</div>
 													{#if group.path && group.path !== group.name}
 														<div
@@ -1091,9 +1089,9 @@
 											</div>
 										</button>
 
-										<!-- Project Sessions (when expanded) -->
+										<!-- Project Sessions (when expanded - flush edge-to-edge with subtle left highlight) -->
 										{#if !isCollapsed}
-											<div class="divide-y divide-(--line-subtle) bg-(--panel)/50 pl-3">
+											<div class="divide-y divide-(--line-subtle)">
 												{#each group.sessions as session (session.id)}
 													{@const subCount = getSubagentCount(session)}
 													<a
@@ -1101,7 +1099,7 @@
 														data-sveltekit-preload-code="viewport"
 														data-sveltekit-preload-data="hover"
 														class:active={page.params.id === session.id}
-														class="session-row group relative block border-l border-(--line) no-underline hover:border-indigo-400"
+														class="session-row group relative block border-l-2 border-l-transparent no-underline transition-all hover:border-l-indigo-400/60 hover:bg-indigo-500/5 [&.active]:border-l-indigo-400 [&.active]:bg-indigo-500/10"
 													>
 														<div class="flex items-start justify-between gap-2">
 															<span

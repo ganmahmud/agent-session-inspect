@@ -64,28 +64,34 @@ agent-session-inspect web --port 4318
 ## Features
 
 ### 🌐 Interactive Web Dashboard (`web` / `--web`)
-Modern SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, collapsible timeline navigation, and rich markdown rendering.
+Modern SvelteKit local web app (`http://127.0.0.1:4318`) with dark mode, collapsible timeline navigation, session pinning, resizable sidebar, and rich markdown rendering.
 
 ### ⚡ Futuristic Terminal TUI Dashboard (`tui` / `--ui`)
-Dual-pane keyboard & mouse interface with live session filtering, turn-by-turn activity logs, tool execution metrics, and status telemetry.
+Dual-pane keyboard & mouse interface with live project filtering (`p`), turn-by-turn activity logs, compact token telemetry, subagent badges, and quick JSON export (`e`).
 
 ![Terminal TUI Dashboard](assets/terminal-tui.png)
 
+### 🗂️ Project-Based Session Grouping & Overview
+Automatically classifies sessions by workspace project directory. Access dedicated project overview pages with aggregated token footprints and active session counts.
+
 ### 🔍 Rich File Changes & Inline Diff Viewer
-Full patch inspection with side-by-side file tree, addition/deletion counters, and copyable unified diffs.
+Full patch inspection with side-by-side file tree, addition/deletion counters (`+N / -M`), and copyable unified diffs.
 
 ![File Changes & Diff Viewer](assets/web-diff-viewer.png)
 
 ### 📊 Context & Performance Diagnostics
-Token footprint breakdown, prompt cache efficiency, reasoning overhead metrics, and heavy-hitter turn spike analysis.
+Token footprint breakdown, prompt cache efficiency, reasoning overhead metrics, context window saturation gauges, and heavy-hitter turn spike analysis.
 
 ![Session Diagnostics & Analytics](assets/web-analytics.png)
 
+### 🤖 Subagent & Multi-Agent Telemetry
+Track delegated subagent executions (`subagent_activity`, `delegate_task`) with dedicated execution timing and multi-agent interaction telemetry.
+
 ### 📦 Standalone Session Export & Drag-and-Drop Import
-Download complete sessions or isolated message interactions as JSON; drag-and-drop JSON files in the web UI to inspect ephemeral sessions in-memory.
+Download complete sessions or isolated message interactions as JSON; drag-and-drop JSON files in the web UI to inspect ephemeral sessions in-memory without database writes.
 
 ### 🔒 100% Local & Privacy-Preserving
-Parses local `~/.codex/sessions` logs directly in read-only mode without uploading data to external servers or modifying local files.
+Parses local `~/.codex/sessions` logs directly in read-only mode with file-based scan caching without uploading data to external servers or modifying local files.
 
 ---
 
@@ -99,8 +105,10 @@ npm start
 npm run dashboard:dev
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes and migration guides.
+
 ## License
 
 [MIT License](LICENSE) © [Gan Mahmud](https://github.com/ganmahmud)
-
-
