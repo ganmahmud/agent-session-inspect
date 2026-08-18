@@ -4,7 +4,7 @@
 	import { onMount, type Snippet } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page, navigating } from '$app/state';
-	import { resolveRoute } from '$app/paths';
+	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import SessionSkeleton from '$lib/components/SessionSkeleton.svelte';
 	import ImportModal from '$lib/components/ImportModal.svelte';
@@ -24,7 +24,8 @@
 		ChevronDown,
 		ChevronRight,
 		FileText,
-		Star
+		Star,
+		ExternalLink
 	} from '@lucide/svelte';
 	import {
 		initPreferences,
@@ -95,7 +96,7 @@
 		if (list.length > 0) {
 			const currentId = page.params.id;
 			if (!currentId || !list.some((s) => s.id === currentId)) {
-				goto(resolveRoute('/session/[id]', { id: list[0].id }), { replaceState: true });
+				goto(resolve('/session/[id]', { id: list[0].id }), { replaceState: true });
 			}
 		}
 	});
@@ -528,7 +529,7 @@
 				<div class="min-w-0 flex-1">
 					<div class="flex items-center gap-2">
 						<a
-							href={resolveRoute('/')}
+							href={resolve('/')}
 							class="truncate text-xs font-bold tracking-tight text-inherit no-underline hover:underline sm:text-sm"
 						>
 							Agent Session Inspect
@@ -565,7 +566,7 @@
 
 				<div class="flex items-center gap-3">
 					<a
-						href={resolveRoute('/import')}
+						href={resolve('/import')}
 						class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-bold text-indigo-400 no-underline transition-colors hover:bg-indigo-500 hover:text-white"
 						title="Open Import Hub & Studio"
 					>
@@ -859,7 +860,7 @@
 								{@const subCount = getSubagentCount(session)}
 								{@const proj = getSessionProject(session)}
 								<a
-									href={resolveRoute('/session/[id]', { id: session.id })}
+									href={resolve('/session/[id]', { id: session.id })}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}
@@ -949,7 +950,7 @@
 							{#each importedSessionsList() as session (session.id)}
 								{@const subCount = getSubagentCount(session)}
 								<a
-									href={resolveRoute('/session/[id]', { id: session.id })}
+									href={resolve('/session/[id]', { id: session.id })}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}
@@ -1071,6 +1072,14 @@
 											</div>
 
 											<div class="flex shrink-0 items-center gap-1.5">
+												<a
+													href={resolve('/project/[name]', { name: encodeURIComponent(group.name) })}
+													class="rounded p-1 text-(--muted) transition-colors hover:bg-indigo-500/20 hover:text-indigo-400"
+													title="Open {group.name} Project Overview"
+													onclick={(e) => e.stopPropagation()}
+												>
+													<ExternalLink class="h-3 w-3" />
+												</a>
 												{#if group.totalTokens > 0}
 													<span
 														class="inline-flex items-center gap-0.5 rounded bg-(--panel-subtle) px-1.5 py-0.5 font-mono text-[10px] font-semibold text-(--muted)"
@@ -1088,7 +1097,7 @@
 												{#each group.sessions as session (session.id)}
 													{@const subCount = getSubagentCount(session)}
 													<a
-														href={resolveRoute('/session/[id]', { id: session.id })}
+														href={resolve('/session/[id]', { id: session.id })}
 														data-sveltekit-preload-code="viewport"
 														data-sveltekit-preload-data="hover"
 														class:active={page.params.id === session.id}
@@ -1180,7 +1189,7 @@
 											{#each ungroupedSessions as session (session.id)}
 												{@const subCount = getSubagentCount(session)}
 												<a
-													href={resolveRoute('/session/[id]', { id: session.id })}
+													href={resolve('/session/[id]', { id: session.id })}
 													data-sveltekit-preload-code="viewport"
 													data-sveltekit-preload-data="hover"
 													class:active={page.params.id === session.id}
@@ -1263,7 +1272,7 @@
 								{@const subCount = getSubagentCount(session)}
 								{@const proj = getSessionProject(session)}
 								<a
-									href={resolveRoute('/session/[id]', { id: session.id })}
+									href={resolve('/session/[id]', { id: session.id })}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}

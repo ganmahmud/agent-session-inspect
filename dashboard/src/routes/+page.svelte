@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Upload, Sparkles } from '@lucide/svelte';
-	import { resolveRoute } from '$app/paths';
+	import { resolve } from '$app/paths';
 </script>
 
 <svelte:head><title>Agent Session Inspect — AI Session Debugger</title></svelte:head>
@@ -16,7 +16,7 @@
 
 	<div class="mt-6 flex flex-wrap items-center justify-center gap-3">
 		<a
-			href={resolveRoute('/import')}
+			href={resolve('/import')}
 			class="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition-all hover:scale-105 no-underline"
 		>
 			<Sparkles class="h-4 w-4" />

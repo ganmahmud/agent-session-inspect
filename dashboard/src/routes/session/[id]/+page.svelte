@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { SvelteSet, SvelteMap } from 'svelte/reactivity';
+	import { resolve } from '$app/paths';
 	import { markdown, toPlainText } from '$lib/markdown';
 	import { countTokens } from '$lib/tokenizer';
 	import {
@@ -546,13 +547,14 @@
 						{@const pName =
 							detail.projectName || (detail.cwd ? extractProjectName(detail.cwd) : undefined)}
 						{#if pName}
-							<span
-								class="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400"
-								title={detail.cwd ? `Project: ${pName}\nLocation: ${detail.cwd}` : `Project: ${pName}`}
+							<a
+								href={resolve('/project/[name]', { name: encodeURIComponent(pName) })}
+								class="inline-flex items-center gap-1.5 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-0.5 font-mono text-[10px] font-bold text-indigo-400 no-underline transition-all hover:bg-indigo-500/20 hover:border-indigo-400 hover:scale-102"
+								title={detail.cwd ? `Project: ${pName}\nLocation: ${detail.cwd}\nClick to view Project Overview` : `Project: ${pName}\nClick to view Project Overview`}
 							>
 								<FolderGit2 class="h-3 w-3 text-indigo-400" />
 								<span>{pName}</span>
-							</span>
+							</a>
 						{/if}
 					{/if}
 					<span class="font-mono text-xs text-(--muted)">#{shortId(detail.id)}</span>
