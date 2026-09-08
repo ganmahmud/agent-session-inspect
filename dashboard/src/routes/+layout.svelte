@@ -87,17 +87,14 @@
 		}
 	});
 
-	// Auto-select and show first session on load (filtered or unfiltered)
+	// The home route opens the first visible session; detail routes must keep their requested ID.
 	$effect(() => {
 		if (typeof window === 'undefined') return;
-		if (page.route.id !== '/session/[id]' && page.route.id !== '/') return;
+		if (page.route.id !== '/') return;
 
 		const list = sessionFilter === 'imported' ? importedSessionsList() : regularSessions();
 		if (list.length > 0) {
-			const currentId = page.params.id;
-			if (!currentId || !list.some((s) => s.id === currentId)) {
-				goto(resolve('/session/[id]', { id: list[0].id }), { replaceState: true });
-			}
+			goto(resolve('/session/[id]', { id: list[0].id }), { replaceState: true });
 		}
 	});
 

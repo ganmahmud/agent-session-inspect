@@ -77,6 +77,41 @@ function messageText(content: unknown): string | undefined {
   return blocks.length ? blocks.join('\n\n') : undefined;
 }
 
+type TranscriptFormat = 'canonical' | 'event' | 'response';
+
+async function transcriptFormat(file: string): Promise<TranscriptFormat> {
+  let userEventCount = 0;
+  let agentEventCount = 0;
+  const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const raw of input) {
+    if (!raw.trim()) continue;
+    let source: JsonRecord;
+    try {
+      source = record(JSON.parse(raw)) ?? {};
+    } catch {
+      continue;
+    }
+    const payload = record(source.payload) ?? {};
+    if (text(source.type) !== 'event_msg') continue;
+    const eventType = text(payload.type);
+    if (eventType === 'item_completed') {
+      const itemType = text(record(payload.item)?.type);
+      if (itemType === 'UserMessage' || itemType === 'AgentMessage') return 'canonical';
+    }
+    if (eventType === 'user_message') userEventCount += 1;
+    if (eventType === 'agent_message') agentEventCount += 1;
+  }
+  return userEventCount && agentEventCount ? 'event' : 'response';
+}
+
+function canonicalMessage(payload: JsonRecord): { role: 'user' | 'assistant'; text: string } | undefined {
+  const item = record(payload.item);
+  const itemType = text(item?.type);
+  const role = itemType === 'UserMessage' ? 'user' : itemType === 'AgentMessage' ? 'assistant' : undefined;
+  const value = messageText(item?.content);
+  return role && value !== undefined ? { role, text: value } : undefined;
+}
+
 function timestampDelta(startedAt?: string, completedAt?: string): number | undefined {
   if (!startedAt || !completedAt) return undefined;
   const delta = Date.parse(completedAt) - Date.parse(startedAt);
@@ -195,12 +230,6 @@ function isInternalReviewMessage(value: string): boolean {
 }
 
 export async function readCodexSessionDetail(session: SessionInventory): Promise<SessionDetail> {
-  const useChatSurface = Boolean(
-    session.eventCounts &&
-    (session.eventCounts['event_msg.user_message'] ?? 0) > 0 &&
-    (session.eventCounts['event_msg.agent_message'] ?? 0) > 0
-  );
-
   const conversation: ConversationEntry[] = [];
   const hiddenMessages: DebugMessage[] = [];
   const unattachedActivities: ReplyActivity[] = [];
@@ -222,6 +251,7 @@ export async function readCodexSessionDetail(session: SessionInventory): Promise
   };
 
   for (const file of session.sourceFiles) {
+    const format = await transcriptFormat(file);
     const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
     let line = 0;
     for await (const raw of input) {
@@ -243,14 +273,17 @@ export async function readCodexSessionDetail(session: SessionInventory): Promise
       if (type === 'turn_context') currentModel = modelFromTurnContext(payload, timestamp) ?? currentModel;
       if (type === 'event_msg' && eventType === 'thread_settings_applied') currentModel = modelFromSettings(payload, timestamp) ?? currentModel;
 
-      const eventMessageRole = type === 'event_msg' && (eventType === 'user_message' || eventType === 'agent_message')
+      const canonical = format === 'canonical' && type === 'event_msg' && eventType === 'item_completed'
+        ? canonicalMessage(payload)
+        : undefined;
+      const eventMessageRole = format === 'event' && type === 'event_msg' && (eventType === 'user_message' || eventType === 'agent_message')
         ? eventType === 'user_message' ? 'user' as const : 'assistant' as const
         : undefined;
-      const fallbackRole = !useChatSurface && type === 'response_item' && eventType === 'message'
+      const fallbackRole = format === 'response' && type === 'response_item' && eventType === 'message'
         ? text(payload.role) === 'user' || text(payload.role) === 'assistant' ? text(payload.role) as 'user' | 'assistant' : undefined
         : undefined;
-      const role = eventMessageRole ?? fallbackRole;
-      const visibleText = eventMessageRole ? text(payload.message) : fallbackRole ? messageText(payload.content) : undefined;
+      const role = canonical?.role ?? eventMessageRole ?? fallbackRole;
+      const visibleText = canonical?.text ?? (eventMessageRole ? text(payload.message) : fallbackRole ? messageText(payload.content) : undefined);
       if (role && visibleText !== undefined) {
         if (role === 'user') {
           discardPending();

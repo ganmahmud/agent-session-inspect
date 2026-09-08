@@ -192,6 +192,38 @@ test('falls back to legacy response messages and merges overlapping tool time', 
 	}
 });
 
+test('prefers canonical completed items without hiding legacy rollout messages', async () => {
+	const directory = tempDirectory();
+	try {
+		const canonical = writeLog(directory, 'canonical.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('turn_context', { model: 'gpt-6-astra' }, '2026-09-07T15:49:05.000Z'),
+			jsonLine('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<recommended_plugins>Injected context</recommended_plugins>' }] }, '2026-09-07T15:49:05.100Z'),
+			jsonLine('event_msg', { type: 'user_message', message: 'Duplicate approval review' }, '2026-09-07T15:49:05.200Z'),
+			jsonLine('event_msg', { type: 'agent_message', message: 'Duplicate approval result' }, '2026-09-07T15:49:05.300Z'),
+			jsonLine('event_msg', { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'Actual prompt' }] } }, '2026-09-07T15:49:06.000Z'),
+			jsonLine('response_item', { type: 'custom_tool_call', call_id: 'search-1', name: 'web.search', input: '{}' }, '2026-09-07T15:49:07.000Z'),
+			jsonLine('response_item', { type: 'custom_tool_call_output', call_id: 'search-1', output: 'result' }, '2026-09-07T15:49:08.000Z'),
+			jsonLine('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Duplicate reply' }] }, '2026-09-07T15:49:09.000Z'),
+			jsonLine('event_msg', { type: 'item_completed', item: { type: 'AgentMessage', content: [{ type: 'Text', text: 'Actual reply' }] } }, '2026-09-07T15:49:10.000Z'),
+		]);
+		const legacy = writeLog(directory, 'legacy.jsonl', [
+			jsonLine('session_meta', { id: sessionOne }),
+			jsonLine('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Legacy prompt' }] }, '2026-09-07T15:50:00.000Z'),
+			jsonLine('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Legacy reply' }] }, '2026-09-07T15:50:01.000Z'),
+		]);
+		const scan = await scanCodex(directory);
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		assert.equal(canonical.endsWith('canonical.jsonl'), true);
+		assert.equal(legacy.endsWith('legacy.jsonl'), true);
+		assert.deepEqual(detail.conversation.map((message) => message.text), ['Actual prompt', 'Actual reply', 'Legacy prompt', 'Legacy reply']);
+		assert.equal(detail.conversation[1]?.activity?.model.name, 'gpt-6-astra');
+		assert.equal(detail.conversation[1]?.activity?.tools[0]?.id, 'search-1');
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test('classifies Codex approval reviews separately from user conversation', async () => {
 	const directory = tempDirectory();
 	try {
@@ -376,5 +408,3 @@ test('extracts project names and groups sessions by project workspace', async ()
 		rmSync(directory, { recursive: true, force: true });
 	}
 });
-
-
