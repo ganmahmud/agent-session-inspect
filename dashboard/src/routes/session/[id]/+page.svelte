@@ -37,7 +37,7 @@
 		Star
 	} from '@lucide/svelte';
 	import { isPinned, togglePinSession } from '$lib/preferences.svelte';
-	import { extractProjectName } from '$lib/project';
+	import { agentLabel, extractProjectName } from '$lib/project';
 	import TokenBreakdownVisualizer from '$lib/components/TokenBreakdownVisualizer.svelte';
 	import FileDiffViewer from '$lib/components/FileDiffViewer.svelte';
 	import SubagentTelemetry from '$lib/components/SubagentTelemetry.svelte';
@@ -155,7 +155,8 @@
 	// Multi-select messages state
 	const selectedMessageIds = new SvelteSet<string>();
 
-	const title = (session: SessionDetail) => session.displayTitle.value ?? 'Untitled Codex session';
+	const title = (session: SessionDetail) =>
+		session.displayTitle.value ?? `Untitled ${agentLabel(session)} session`;
 	const shortId = (id: string) => id.slice(0, 8);
 	const date = (value?: string) => value?.slice(0, 10) ?? 'Unknown date';
 	const clock = (value?: string) =>
@@ -794,7 +795,7 @@
 						: 'text-(--muted) hover:text-(--ink)'}"
 					onclick={() => (roleFilter = 'agent')}
 				>
-					Codex Agent
+					{agentLabel(detail)} Agent
 				</button>
 				<button
 					class="rounded px-2.5 py-1 text-[11px] font-semibold transition-colors {roleFilter ===
@@ -887,7 +888,7 @@
 							{:else if message.role === 'assistant'}
 								<span class="role-badge">
 									<Sparkles class="h-3.5 w-3.5 text-sky-400" />
-									Codex Agent
+									{agentLabel(detail)} Agent
 								</span>
 								{#if message.activity?.model.name}
 									<span

@@ -1,7 +1,4 @@
-import { join } from 'node:path';
-import { readCodexCatalog } from '../../../../src/catalog.ts';
-import { scanCodex } from '../../../../src/codex.ts';
-import { readCodexSessionDetail } from '../../../../src/detail.ts';
+import { parseAgent, readSessionDetail, scanSessions } from '../../../../src/sessions.ts';
 import type {
 	ScanResult,
 	SessionDetail,
@@ -11,9 +8,8 @@ import type {
 } from '../../../../src/types.ts';
 export type { SessionDetail, SessionInventory, ReplyActivity, TokenSummary };
 
-const codexHome = process.env.CODEX_HOME || join(process.env.HOME || '', '.codex');
-const sessionPath = process.env.ASI_SESSIONS_PATH || join(codexHome, 'sessions');
-const catalogPaths = [codexHome, join(codexHome, 'sqlite')];
+const sessionPath = process.env.ASI_SESSIONS_PATH || undefined;
+const agentFilter = parseAgent(process.env.ASI_AGENT);
 
 let cached: { createdAt: number; result: ScanResult } | undefined;
 
@@ -30,17 +26,13 @@ const INVENTORY_CACHE_TTL_MS = 30_000;
 export async function sessionInventory(): Promise<ScanResult> {
 	if (cached && Date.now() - cached.createdAt < INVENTORY_CACHE_TTL_MS) return cached.result;
 	try {
-		const catalog = readCodexCatalog(catalogPaths);
-		const result = await scanCodex(sessionPath, {
-			catalogTitles: catalog.titles,
-			catalogErrors: catalog.errors
-		});
+		const result = await scanSessions({ path: sessionPath, agent: agentFilter });
 		cached = { createdAt: Date.now(), result };
 		return result;
 	} catch (err) {
 		return {
 			schemaVersion: 1,
-			provider: 'codex',
+			provider: agentFilter ?? 'all',
 			sessions: [],
 			diagnostics: {
 				filesRead: 0,
@@ -69,7 +61,7 @@ export async function sessionDetail(
 	const result = existingInventory ?? (await sessionInventory());
 	const session = result.sessions.find((item) => item.id === id);
 	if (session) {
-		const detail = await readCodexSessionDetail(session);
+		const detail = await readSessionDetail(session);
 		if (detail) {
 			if (detailCache.size >= MAX_DETAIL_CACHE) {
 				const oldestKey = Array.from(detailCache.entries()).sort(
@@ -216,6 +208,7 @@ export async function getSessionSubagents(
 							displayTitle: { value: subName, source: 'session_event' },
 							sourceFiles: session.sourceFiles ?? [],
 							cliVersions: session.cliVersions ?? [],
+							agent: session.agent,
 							startedAt: t.startedAt ?? m.timestamp,
 							updatedAt: t.completedAt ?? m.timestamp,
 							cwd: session.cwd,
@@ -268,7 +261,10 @@ export async function getSessionSubagents(
 												source: t.source ?? { file: 'inline', line: 1 }
 											}
 										],
-										model: { name: 'codex-subagent', source: 'thread_settings' as const }
+										model: {
+											name: session.agent === 'claude' ? 'claude-subagent' : 'codex-subagent',
+											source: 'thread_settings' as const
+										}
 									},
 									source: t.source ?? { file: 'inline', line: 1 }
 								}

@@ -1,7 +1,7 @@
 import readline from 'node:readline';
 import { writeFileSync } from 'node:fs';
-import { displayName, projectName, shortId } from './codex.ts';
-import { readCodexSessionDetail } from './detail.ts';
+import { agentLabel, displayName, projectName, shortId } from './codex.ts';
+import { readSessionDetail } from './sessions.ts';
 import type {
   ReplyActivity,
   ScanResult,
@@ -448,7 +448,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
     currentDetail = null;
     render();
     try {
-      currentDetail = await readCodexSessionDetail(session);
+      currentDetail = await readSessionDetail(session);
     } catch {
       currentDetail = null;
     } finally {
@@ -786,6 +786,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
               `Started             ${selectedSession.startedAt ?? 'unknown'}`,
               `Updated             ${selectedSession.updatedAt ?? 'unknown'}`,
               `Duration            ${duration(selectedSession.startedAt, selectedSession.updatedAt)}`,
+              `Agent               ${agentLabel(selectedSession)}`,
               `Title Source        ${selectedSession.displayTitle.source}`,
               ...(selectedSession.provider
                 ? [
@@ -858,7 +859,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
         } else {
           const filterLabel =
             roleFilter === 'agent'
-              ? 'CODEX AGENT'
+              ? `${agentLabel(selectedSession).toUpperCase()} AGENT`
               : roleFilter === 'subagent'
                 ? 'SUBAGENTS'
                 : roleFilter.toUpperCase();
@@ -984,7 +985,7 @@ export async function startTui(scanResult: ScanResult): Promise<void> {
 
                 currentLines.push(
                   ...formatCard(
-                    '🤖 CODEX AGENT',
+                    `🤖 ${agentLabel(selectedSession).toUpperCase()} AGENT`,
                     c.cyan,
                     cardLines,
                     mainWidth - 4,

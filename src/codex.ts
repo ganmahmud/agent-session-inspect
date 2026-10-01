@@ -52,6 +52,7 @@ function usage(value: unknown): TokenUsage | undefined {
 function emptySession(id: string, file: string): MutableSession {
   return {
     id,
+    agent: 'codex',
     displayTitle: { value: null, source: 'absent' },
     sourceFiles: [file],
     cliVersions: [],
@@ -71,7 +72,7 @@ function emptySession(id: string, file: string): MutableSession {
   };
 }
 
-function updateTime(session: MutableSession, timestamp: string | undefined): void {
+export function updateTime(session: { startedAt?: string; updatedAt?: string }, timestamp: string | undefined): void {
   if (!timestamp) return;
   if (!session.startedAt || timestamp < session.startedAt) session.startedAt = timestamp;
   if (!session.updatedAt || timestamp > session.updatedAt) session.updatedAt = timestamp;
@@ -219,7 +220,7 @@ function knownRecord(recordType: string, payloadType: string | undefined): boole
   return false;
 }
 
-function collectFiles(path: string): string[] {
+export function collectFiles(path: string): string[] {
   const target = resolve(path);
   try {
     if (!existsSync(target)) return [];
@@ -456,7 +457,11 @@ export async function scanCodex(path: string, options: ScanOptions = {}): Promis
 }
 
 export function displayName(session: SessionInventory): string {
-  return session.displayTitle.value ?? 'Untitled Codex session';
+  return session.displayTitle.value ?? `Untitled ${agentLabel(session)} session`;
+}
+
+export function agentLabel(session: Pick<SessionInventory, 'agent'>): string {
+  return session.agent === 'claude' ? 'Claude Code' : 'Codex';
 }
 
 export function shortId(id: string): string {

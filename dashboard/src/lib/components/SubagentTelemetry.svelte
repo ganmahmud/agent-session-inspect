@@ -167,7 +167,7 @@
 			</div>
 			<h3 class="mt-4 text-base font-bold text-(--ink)">No Subagent Delegations in This Session</h3>
 			<p class="mx-auto mt-2 max-w-md text-xs leading-relaxed text-(--muted)">
-				This Codex session was executed solely by the main agent thread without delegating to child
+				This session was executed solely by the main agent thread without delegating to child
 				subagents or spawning secondary agent threads.
 			</p>
 			<div
@@ -176,7 +176,7 @@
 				<p class="font-bold text-(--ink)">How Subagent Observability Works:</p>
 				<ul class="mt-2 list-disc space-y-1 pl-4">
 					<li>
-						When Codex executes <code>sub_agent_activity</code> or spawns child threads, they are tracked
+						When Codex executes <code>sub_agent_activity</code> or Claude Code runs a <code>Task</code> subagent, they are tracked
 						automatically.
 					</li>
 					<li>

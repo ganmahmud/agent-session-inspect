@@ -90,7 +90,7 @@
 	const providerDistribution = $derived.by(() => {
 		const map = new SvelteMap<string, number>();
 		for (const s of projectSessions) {
-			const p = s.provider || 'codex';
+			const p = s.agent === 'claude' ? 'claude' : s.provider || 'codex';
 			map.set(p, (map.get(p) ?? 0) + 1);
 		}
 		return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);

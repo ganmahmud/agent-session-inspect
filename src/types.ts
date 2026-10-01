@@ -1,3 +1,5 @@
+export type AgentKind = 'codex' | 'claude';
+
 export type TitleSource = 'provider_catalog' | 'session_event' | 'absent';
 
 export interface DisplayTitle {
@@ -49,6 +51,8 @@ export interface Relationship {
 
 export interface SessionInventory {
   id: string;
+  /** Agent that wrote the transcript; absent on exports from older versions, which were always Codex. */
+  agent?: AgentKind;
   displayTitle: DisplayTitle;
   sourceFiles: string[];
   startedAt?: string;
@@ -81,7 +85,7 @@ export interface ProjectGroup {
 
 export interface ScanResult {
   schemaVersion: 1;
-  provider: 'codex';
+  provider: AgentKind | 'all';
   sessions: SessionInventory[];
   diagnostics: {
     filesRead: number;
@@ -140,7 +144,7 @@ export interface TimeBreakdown {
 export interface ModelConfiguration {
   name?: string;
   provider?: string;
-  source: 'turn_context' | 'thread_settings' | 'unavailable';
+  source: 'turn_context' | 'thread_settings' | 'message' | 'unavailable';
   observedAt?: string;
 }
 

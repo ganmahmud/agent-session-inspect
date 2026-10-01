@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Claude Code Support**: Claude Code transcripts (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects`) are scanned alongside Codex sessions in the CLI, TUI and web dashboard.
+  - Token usage is deduplicated per API response and mapped onto the existing fields (input includes cache reads and writes; thinking tokens count as reasoning output).
+  - Tool calls with timing, `Edit`/`Write` diffs, compaction boundaries, interrupted turns, and `Task` subagent transcripts as linked child sessions.
+  - Session titles come from `/rename`, transcript summaries, or the first prompt.
+- `--agent codex|claude|all` option for every command, plus `scan` and `claude scan` commands. The dashboard honours `ASI_AGENT`.
+- Each session now records which `agent` wrote it; agent labels in the TUI, scan report and dashboard follow it.
+
+### Changed
+- `scan` JSON output reports `provider: "all"` unless an agent is selected.
+- A custom `[path]` is read by both agents' parsers; with no path, each agent's default directory is used.
+
+---
+
 ## [0.1.8] - 2026-08-18
 
 ### Added

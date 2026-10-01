@@ -1,5 +1,10 @@
 import type { SessionInventory } from '../../../src/types.ts';
 
+/** Display name of the agent that wrote a session; exports from older versions carry no agent and were Codex. */
+export function agentLabel(session?: { agent?: SessionInventory['agent'] }): string {
+	return session?.agent === 'claude' ? 'Claude Code' : 'Codex';
+}
+
 export function isSystemOrTempPath(pathStr: string): boolean {
 	const normalized = pathStr.replace(/\\/g, '/').toLowerCase();
 	if (

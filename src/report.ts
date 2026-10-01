@@ -1,4 +1,4 @@
-import { displayName, projectName, shortId } from './codex.ts';
+import { agentLabel, displayName, projectName, shortId } from './codex.ts';
 import type { ScanResult, SessionInventory } from './types.ts';
 
 const useColor = Boolean(process.stdout.isTTY && process.env.NO_COLOR === undefined);
@@ -48,7 +48,7 @@ export function renderScan(result: ScanResult, verbose: boolean): string {
   const rows = result.sessions.map((session) => {
     const pTag = session.cwd || session.projectName ? ` ${gray('·')} ${dim('PRJ')} ${brightCyan(projectName(session))}` : '';
     const titleLine = `${brightGreen('◈')} ${bold(displayName(session))}`;
-    const idLine = `  ${gray('│')} ${dim('ID')} ${cyan(shortId(session.id).padEnd(10))} ${gray('·')} ${dim('DATE')} ${date(session.startedAt)}${pTag}`;
+    const idLine = `  ${gray('│')} ${dim('AGENT')} ${magenta(agentLabel(session))} ${gray('·')} ${dim('ID')} ${cyan(shortId(session.id).padEnd(10))} ${gray('·')} ${dim('DATE')} ${date(session.startedAt)}${pTag}`;
     const statsLine = `  ${gray('│')} ${dim('STATS')} ${brightCyan(duration(session.startedAt, session.updatedAt).padEnd(8))} ${gray('│')} ${yellow(`${formatNumber(latestTokens(session))} tokens`)} ${gray('│')} ${magenta(`${session.tools.calls} tools`)}`;
     const detail = verbose ? `\n  ${gray('│')} ${dim('SOURCE')} ${gray(session.sourceFiles.join(', '))}` : '';
     return `${titleLine}\n${idLine}\n${statsLine}${detail}`;
@@ -58,7 +58,7 @@ export function renderScan(result: ScanResult, verbose: boolean): string {
     ? `\n${yellow('── Diagnostics ──────────────────────────────────────────────────────────────')}\n${yellow('!')} ${result.diagnostics.malformedRecords} malformed records · ${result.diagnostics.catalogErrors.length} catalog warnings`
     : '';
 
-  return [banner, '', rows.length ? rows.join('\n\n') : dim('No Codex sessions found.'), diagnostics].filter(Boolean).join('\n');
+  return [banner, '', rows.length ? rows.join('\n\n') : dim('No Codex or Claude Code sessions found.'), diagnostics].filter(Boolean).join('\n');
 }
 
 export function renderInspect(session: SessionInventory, verbose: boolean): string {
@@ -75,6 +75,7 @@ export function renderInspect(session: SessionInventory, verbose: boolean): stri
     `  ${cyan('┌─ GENERAL INFO ───────────────────────────────────────────────────────────┐')}`,
     `  ${cyan('│')} ${dim('Session ID'.padEnd(14))} ${cyan(session.id)}`,
     `  ${cyan('│')} ${dim('Short ID'.padEnd(14))} ${brightCyan(shortId(session.id))}`,
+    `  ${cyan('│')} ${dim('Agent'.padEnd(14))} ${agentLabel(session)}`,
     `  ${cyan('│')} ${dim('Title Source'.padEnd(14))} ${session.displayTitle.source}`,
     ...(session.cwd || session.projectName ? [
       `  ${cyan('│')} ${dim('Project'.padEnd(14))} ${brightCyan(projectName(session))}`,

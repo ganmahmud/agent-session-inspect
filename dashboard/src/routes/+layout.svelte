@@ -40,7 +40,7 @@
 		deselectAllProjects,
 		isProjectSelected
 	} from '$lib/preferences.svelte';
-	import { extractProjectName, formatCompactTokens } from '$lib/project';
+	import { agentLabel, extractProjectName, formatCompactTokens } from '$lib/project';
 	import type { SessionInventory } from '../../../src/types.ts';
 	import type { LayoutData } from './$types';
 
@@ -207,8 +207,9 @@
 		return allIds.size;
 	}
 
-	const title = (session?: SessionInventory | { displayTitle?: { value?: string } }) =>
-		session?.displayTitle?.value ?? 'Untitled Codex session';
+	const title = (
+		session?: SessionInventory | { displayTitle?: { value?: string }; agent?: SessionInventory['agent'] }
+	) => session?.displayTitle?.value ?? `Untitled ${agentLabel(session)} session`;
 	const date = (value?: string) => value?.slice(0, 10) ?? 'Unknown date';
 	const number = (value?: number) =>
 		value === undefined ? '—' : new Intl.NumberFormat('en-US').format(value);
@@ -895,6 +896,9 @@
 												<Clock class="h-3 w-3" />
 												{date(session.startedAt)}
 											</span>
+											<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+												{agentLabel(session)}
+											</span>
 											{#if proj.name !== 'General / No Project'}
 												<span
 													class="project-badge max-w-24 truncate font-mono text-[9px]"
@@ -999,6 +1003,9 @@
 											<Clock class="h-3 w-3" />
 											{date(session.startedAt)}
 										</span>
+										<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+											{agentLabel(session)}
+										</span>
 										<div class="flex shrink-0 items-center gap-1.5">
 											{#if subCount > 0}
 												<span
@@ -1028,7 +1035,7 @@
 
 				{#if sessionFilter !== 'imported' && regularSessions().length > 0}
 					{#if viewMode === 'projects'}
-						<!-- Project Grouped View (Codex / ChatGPT App Style) -->
+						<!-- Project Grouped View (ChatGPT App Style) -->
 						{#if groupedProjects.length > 0 || ungroupedSessions.length > 0}
 							<div class="divide-y divide-(--line)">
 								<!-- 1. Grouped Projects -->
@@ -1145,6 +1152,9 @@
 																<Clock class="h-3 w-3" />
 																{date(session.startedAt)}
 															</span>
+															<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+																{agentLabel(session)}
+															</span>
 															<div class="flex shrink-0 items-center gap-1.5">
 																{#if subCount > 0}
 																	<span
@@ -1237,6 +1247,9 @@
 															<Clock class="h-3 w-3" />
 															{date(session.startedAt)}
 														</span>
+														<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+															{agentLabel(session)}
+														</span>
 														<div class="flex shrink-0 items-center gap-1.5">
 															{#if subCount > 0}
 																<span
@@ -1318,6 +1331,9 @@
 											<span class="inline-flex items-center gap-1 font-mono">
 												<Clock class="h-3 w-3" />
 												{date(session.startedAt)}
+											</span>
+											<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+												{agentLabel(session)}
 											</span>
 											{#if proj.name !== 'General / No Project'}
 												<span

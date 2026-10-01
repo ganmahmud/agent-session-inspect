@@ -20,7 +20,7 @@ import type {
 
 type JsonRecord = Record<string, unknown>;
 
-interface PendingActivity extends ReplyActivity {
+export interface PendingActivity extends ReplyActivity {
   task?: TaskTiming;
 }
 
@@ -57,9 +57,9 @@ function durationMs(value: unknown): number | undefined {
   return seconds === undefined && nanos === undefined ? undefined : Math.round((seconds ?? 0) * 1000 + (nanos ?? 0) / 1_000_000);
 }
 
-const MAX_PAYLOAD_STRING_LENGTH = 50_000;
+export const MAX_PAYLOAD_STRING_LENGTH = 50_000;
 
-function compactJson(value: unknown, limit = MAX_PAYLOAD_STRING_LENGTH): string | undefined {
+export function compactJson(value: unknown, limit = MAX_PAYLOAD_STRING_LENGTH): string | undefined {
   if (value === undefined || value === null) return undefined;
   const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   if (str.length > limit) {
@@ -112,7 +112,7 @@ function canonicalMessage(payload: JsonRecord): { role: 'user' | 'assistant'; te
   return role && value !== undefined ? { role, text: value } : undefined;
 }
 
-function timestampDelta(startedAt?: string, completedAt?: string): number | undefined {
+export function timestampDelta(startedAt?: string, completedAt?: string): number | undefined {
   if (!startedAt || !completedAt) return undefined;
   const delta = Date.parse(completedAt) - Date.parse(startedAt);
   return Number.isFinite(delta) && delta >= 0 ? delta : undefined;
@@ -122,13 +122,13 @@ function emptyUsage(): TokenUsage {
   return {};
 }
 
-function addUsage(total: TokenUsage, next: TokenUsage): void {
+export function addUsage(total: TokenUsage, next: TokenUsage): void {
   for (const key of Object.keys(next) as Array<keyof TokenUsage>) {
     if (next[key] !== undefined) total[key] = (total[key] ?? 0) + next[key];
   }
 }
 
-function newActivity(startedAt?: string, model: ModelConfiguration = { source: 'unavailable' }): PendingActivity {
+export function newActivity(startedAt?: string, model: ModelConfiguration = { source: 'unavailable' }): PendingActivity {
   return {
     association: 'source_order',
     startedAt,
@@ -147,7 +147,7 @@ function toolKind(name: string, fallback: ToolCallDetail['kind']): ToolCallDetai
   return fallback;
 }
 
-function toolFor(activity: PendingActivity, tools: Map<string, ToolCallDetail>, id: string, partial: Partial<ToolCallDetail>): ToolCallDetail {
+export function toolFor(activity: PendingActivity, tools: Map<string, ToolCallDetail>, id: string, partial: Partial<ToolCallDetail>): ToolCallDetail {
   const existing = tools.get(id);
   if (existing) {
     Object.assign(existing, Object.fromEntries(Object.entries(partial).filter(([, value]) => value !== undefined)));
@@ -172,7 +172,7 @@ function editFiles(value: unknown): EditDetail['files'] {
   });
 }
 
-function calculateBreakdown(activity: PendingActivity): TimeBreakdown {
+export function calculateBreakdown(activity: PendingActivity): TimeBreakdown {
   const duration = activity.task?.durationMs ?? timestampDelta(activity.startedAt, activity.completedAt);
   const intervals = activity.tools
     .flatMap((tool) => {
@@ -199,7 +199,7 @@ function calculateBreakdown(activity: PendingActivity): TimeBreakdown {
   return { durationMs: duration, measuredToolMs, otherElapsedMs, source, explanation };
 }
 
-function finalise(activity: PendingActivity, completedAt?: string): ReplyActivity {
+export function finalise(activity: PendingActivity, completedAt?: string): ReplyActivity {
   activity.completedAt ??= completedAt;
   activity.breakdown = calculateBreakdown(activity);
   return activity;
@@ -216,7 +216,7 @@ function modelFromSettings(payload: JsonRecord, timestamp?: string): ModelConfig
   return name ? { name, provider: text(settings?.model_provider_id), source: 'thread_settings', observedAt: timestamp } : undefined;
 }
 
-function activityHasData(activity: PendingActivity): boolean {
+export function activityHasData(activity: PendingActivity): boolean {
   return activity.modelRequests.length > 0 || activity.tools.length > 0 || activity.edits.length > 0;
 }
 
