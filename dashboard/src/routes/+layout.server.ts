@@ -1,10 +1,17 @@
 import type { LayoutServerLoad } from './$types';
-import { sessionInventory, getImportedSessionIds, sessionDetail } from '$lib/server/session-data';
+import {
+	allSessionFacts,
+	sessionInventory,
+	getImportedSessionIds,
+	sessionDetail
+} from '$lib/server/session-data';
 import type { SessionInventory } from '../../../src/types.ts';
 
 export const load: LayoutServerLoad = async () => {
 	const inventory = await sessionInventory();
 	const importedIds = getImportedSessionIds();
+	// Build the cross-session search index in the background, so the first search doesn't wait for it.
+	void allSessionFacts().catch(() => undefined);
 
 	// Merge imported sessions into the inventory (avoid duplicates)
 	for (const id of importedIds) {

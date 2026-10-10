@@ -49,6 +49,12 @@ export interface Relationship {
   sessionId: string;
 }
 
+export interface GitContext {
+  branch?: string;
+  commit?: string;
+  repositoryUrl?: string;
+}
+
 export interface SessionInventory {
   id: string;
   /** Agent that wrote the transcript; absent on exports from older versions, which were always Codex. */
@@ -73,6 +79,7 @@ export interface SessionInventory {
   compactionCount: number;
   rollbackCount: number;
   relationships: Relationship[];
+  git?: GitContext;
 }
 
 export interface ProjectGroup {
@@ -155,6 +162,16 @@ export interface TaskTiming {
   status: 'completed' | 'aborted' | 'open';
   durationMs?: number;
   timeToFirstTokenMs?: number;
+  /** Error message reported on task_complete. */
+  error?: string;
+  /** Reason given on turn_aborted, e.g. "interrupted". */
+  abortReason?: string;
+}
+
+export interface TurnSettings {
+  effort?: string;
+  approvalPolicy?: string;
+  sandbox?: string;
 }
 
 export interface ReplyActivity {
@@ -167,6 +184,8 @@ export interface ReplyActivity {
   edits: EditDetail[];
   breakdown: TimeBreakdown;
   task?: TaskTiming;
+  settings?: TurnSettings;
+  reasoning?: string[];
 }
 
 export interface ConversationEntry {

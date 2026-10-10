@@ -34,7 +34,11 @@
 		GitCommitHorizontal,
 		Bot,
 		FolderGit2,
-		Star
+		Star,
+		GitBranch,
+		TriangleAlert,
+		Brain,
+		ListChecks
 	} from '@lucide/svelte';
 	import { isPinned, togglePinSession } from '$lib/preferences.svelte';
 	import { agentLabel, extractProjectName } from '$lib/project';
@@ -68,7 +72,7 @@
 	}
 
 	let view = $state<'conversation' | 'usage' | 'changes' | 'subagents'>('conversation');
-	let roleFilter = $state<'all' | 'user' | 'agent' | 'review'>('all');
+	let roleFilter = $state<'all' | 'user' | 'agent' | 'review' | 'issues'>('all');
 	let fileChanges = $derived(extractSessionFileChanges(detail));
 	let selectedDiffPath = $state<string | undefined>(undefined);
 	const expandedActivities = new SvelteSet<string>();
@@ -173,6 +177,15 @@
 	const activityTotal = (activity?: ReplyActivity) =>
 		activity?.modelRequests.reduce((sum, request) => sum + (request.usage.totalTokens ?? 0), 0);
 
+	// A turn hit trouble when Codex reported an error or the turn was aborted (e.g. interrupted).
+	const hasTurnIssue = (m: ConversationEntry) =>
+		Boolean(m.activity?.task?.error || m.activity?.task?.status === 'aborted');
+	let issueCount = $derived(detail.conversation.filter(hasTurnIssue).length);
+	const settingsLabel = (activity?: ReplyActivity) =>
+		[activity?.settings?.effort, activity?.settings?.approvalPolicy, activity?.settings?.sandbox]
+			.filter(Boolean)
+			.join(' · ');
+
 	const filteredConversation = () => {
 		let list = detail.conversation;
 		if (roleFilter === 'user') {
@@ -181,6 +194,8 @@
 			list = detail.conversation.filter((m) => m.role === 'assistant');
 		} else if (roleFilter === 'review') {
 			list = detail.conversation.filter((m) => m.kind === 'internal_review');
+		} else if (roleFilter === 'issues') {
+			list = detail.conversation.filter(hasTurnIssue);
 		}
 		// Sort strictly by timestamp ascending
 		return [...list].sort(
@@ -560,6 +575,23 @@
 							</a>
 						{/if}
 					{/if}
+					{#if detail.git?.branch || detail.git?.commit}
+						<span
+							class="inline-flex items-center gap-1.5 rounded-md border border-(--line) bg-(--panel-subtle) px-2.5 py-0.5 font-mono text-[10px] font-bold text-(--muted)"
+							title={[
+								detail.git.repositoryUrl && `Repository: ${detail.git.repositoryUrl}`,
+								detail.git.branch && `Branch: ${detail.git.branch}`,
+								detail.git.commit && `Commit: ${detail.git.commit}`
+							]
+								.filter(Boolean)
+								.join('\n')}
+						>
+							<GitBranch class="h-3 w-3 text-emerald-500" />
+							{#if detail.git.branch}<span>{detail.git.branch}</span>{/if}
+							{#if detail.git.commit}<span class="opacity-70">@{detail.git.commit.slice(0, 7)}</span
+								>{/if}
+						</span>
+					{/if}
 					<span class="font-mono text-xs text-(--muted)">#{shortId(detail.id)}</span>
 				</div>
 
@@ -806,6 +838,19 @@
 				>
 					Security Reviews
 				</button>
+				{#if issueCount > 0}
+					<button
+						class="inline-flex items-center gap-1 rounded px-2.5 py-1 text-[11px] font-semibold transition-colors {roleFilter ===
+						'issues'
+							? 'bg-amber-600 text-white'
+							: 'text-amber-600 hover:text-amber-500 dark:text-amber-400'}"
+						onclick={() => (roleFilter = 'issues')}
+						title="Turns that reported an error or were aborted"
+					>
+						<TriangleAlert class="h-3 w-3" />
+						Issues ({issueCount})
+					</button>
+				{/if}
 			</div>
 
 			<!-- Accordion & Multi-Select Actions -->
@@ -895,6 +940,39 @@
 										class="hidden rounded border border-(--line) bg-(--panel-subtle) px-2 py-0.5 font-mono text-[11px] text-(--muted) sm:inline"
 									>
 										{message.activity.model.name}
+									</span>
+								{/if}
+								{#if settingsLabel(message.activity)}
+									<span
+										class="hidden rounded border border-(--line-subtle) px-2 py-0.5 font-mono text-[11px] text-(--muted) lg:inline"
+										title="Reasoning effort · approval policy · sandbox"
+									>
+										{settingsLabel(message.activity)}
+									</span>
+								{/if}
+								{#if message.phase === 'plan'}
+									<span
+										class="inline-flex items-center gap-1 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-sky-500"
+									>
+										<ListChecks class="h-3 w-3" />
+										Plan
+									</span>
+								{/if}
+								{#if message.activity?.task?.error}
+									<span
+										class="inline-flex items-center gap-1 rounded border border-red-500/40 bg-red-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-red-500"
+										title={message.activity.task.error}
+									>
+										<TriangleAlert class="h-3 w-3" />
+										Error
+									</span>
+								{:else if message.activity?.task?.status === 'aborted'}
+									<span
+										class="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-600 capitalize dark:text-amber-400"
+										title="Turn was aborted before completing"
+									>
+										<TriangleAlert class="h-3 w-3" />
+										{message.activity.task.abortReason ?? 'Aborted'}
 									</span>
 								{/if}
 								{#if message.activity?.breakdown.measuredToolMs}
@@ -1103,6 +1181,38 @@
 										{/if}
 									</button>
 								</div>
+							{:else if message.role === 'assistant'}
+								{#if message.activity?.task?.error}
+									<div
+										class="mb-3 flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-600 dark:text-red-400"
+									>
+										<TriangleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+										<span>{message.activity.task.error}</span>
+									</div>
+								{/if}
+								{#if message.activity?.reasoning?.length}
+									<details class="reasoning-summary">
+										<summary>
+											<Brain class="h-3.5 w-3.5" />
+											Thinking summary
+											<span class="opacity-60">({message.activity.reasoning.length})</span>
+										</summary>
+										<div class="reasoning-body">
+											{#each message.activity.reasoning as note, i (i)}
+												<div class="markdown" use:markdown={note}></div>
+											{/each}
+										</div>
+									</details>
+								{/if}
+								{#if !message.text.trim()}
+									<p class="text-xs text-(--muted) italic">No text reply — tool activity only.</p>
+								{:else}
+									<div
+										class="markdown"
+										class:plan-body={message.phase === 'plan'}
+										use:markdown={message.text}
+									></div>
+								{/if}
 							{:else}
 								<div class="markdown" use:markdown={message.text}></div>
 							{/if}

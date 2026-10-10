@@ -34,6 +34,14 @@ function latestTokens(session: SessionInventory): number | undefined {
   return session.token.last?.totalTokens ?? session.token.total?.totalTokens;
 }
 
+function bannerStats(sessionCount: number, totalTokens: number, totalTools: number): string {
+  const sessions = dim(sessionCount + ' sessions');
+  const tokens = yellow(formatNumber(totalTokens) + ' tokens');
+  const tools = magenta(formatNumber(totalTools) + ' tool calls');
+  const padding = ' '.repeat(Math.max(0, 31 - formatNumber(totalTokens).length - formatNumber(totalTools).length - String(sessionCount).length));
+  return `${cyan('│')} ${sessions} ${gray('│')} ${tokens} ${gray('│')} ${tools}${padding}${cyan('│')}`;
+}
+
 export function renderScan(result: ScanResult, verbose: boolean): string {
   const totalTokens = result.sessions.reduce((sum, session) => sum + (latestTokens(session) ?? 0), 0);
   const totalTools = result.sessions.reduce((sum, session) => sum + session.tools.calls, 0);
@@ -41,7 +49,7 @@ export function renderScan(result: ScanResult, verbose: boolean): string {
   const banner = [
     cyan('╭──────────────────────────────────────────────────────────────────────────────╮'),
     `${cyan('│')} ${brightCyan(bold('⚡ AGENT SESSION INSPECTOR'))}${' '.repeat(50)}${cyan('│')}`,
-    `${cyan('│')} ${dim(`${result.sessions.length} sessions`)} ${gray('│')} ${yellow(`${formatNumber(totalTokens)} tokens`)} ${gray('│')} ${magenta(`${formatNumber(totalTools)} tool calls`)}${' '.repeat(Math.max(0, 31 - formatNumber(totalTokens).length - formatNumber(totalTools).length - String(result.sessions.length).length))}${cyan('│')}`,
+    bannerStats(result.sessions.length, totalTokens, totalTools),
     cyan('╰──────────────────────────────────────────────────────────────────────────────╯'),
   ].join('\n');
 
@@ -49,7 +57,9 @@ export function renderScan(result: ScanResult, verbose: boolean): string {
     const pTag = session.cwd || session.projectName ? ` ${gray('·')} ${dim('PRJ')} ${brightCyan(projectName(session))}` : '';
     const titleLine = `${brightGreen('◈')} ${bold(displayName(session))}`;
     const idLine = `  ${gray('│')} ${dim('AGENT')} ${magenta(agentLabel(session))} ${gray('·')} ${dim('ID')} ${cyan(shortId(session.id).padEnd(10))} ${gray('·')} ${dim('DATE')} ${date(session.startedAt)}${pTag}`;
-    const statsLine = `  ${gray('│')} ${dim('STATS')} ${brightCyan(duration(session.startedAt, session.updatedAt).padEnd(8))} ${gray('│')} ${yellow(`${formatNumber(latestTokens(session))} tokens`)} ${gray('│')} ${magenta(`${session.tools.calls} tools`)}`;
+    const tokens = yellow(formatNumber(latestTokens(session)) + ' tokens');
+    const tools = magenta(session.tools.calls + ' tools');
+    const statsLine = `  ${gray('│')} ${dim('STATS')} ${brightCyan(duration(session.startedAt, session.updatedAt).padEnd(8))} ${gray('│')} ${tokens} ${gray('│')} ${tools}`;
     const detail = verbose ? `\n  ${gray('│')} ${dim('SOURCE')} ${gray(session.sourceFiles.join(', '))}` : '';
     return `${titleLine}\n${idLine}\n${statsLine}${detail}`;
   });
@@ -93,19 +103,23 @@ export function renderInspect(session: SessionInventory, verbose: boolean): stri
     `  ${yellow('└──────────────────────────────────────────────────────────────────────────┘')}`,
   ].join('\n');
 
+  const toolCalls = magenta(session.tools.calls + ' calls');
+  const completed = green(session.completedTaskCount + ' completed');
+  const aborted = session.abortedTaskCount ? yellow(session.abortedTaskCount + ' aborted') : '0 aborted';
+  const malformed = session.malformedRecords ? yellow(session.malformedRecords + ' malformed') : '0 malformed';
   const execBox = [
     `  ${magenta('┌─ EXECUTION STATS ────────────────────────────────────────────────────────┐')}`,
-    `  ${magenta('│')} ${dim('Tool Calls'.padEnd(16))} ${magenta(`${session.tools.calls} calls`)} ${gray('(')}${session.tools.outputs} outputs${gray(')')}`,
-    `  ${magenta('│')} ${dim('Tasks'.padEnd(16))} ${session.taskCount} started ${gray('·')} ${green(`${session.completedTaskCount} completed`)} ${gray('·')} ${session.abortedTaskCount ? yellow(`${session.abortedTaskCount} aborted`) : '0 aborted'}`,
+    `  ${magenta('│')} ${dim('Tool Calls'.padEnd(16))} ${toolCalls} ${gray('(')}${session.tools.outputs} outputs${gray(')')}`,
+    `  ${magenta('│')} ${dim('Tasks'.padEnd(16))} ${session.taskCount} started ${gray('·')} ${completed} ${gray('·')} ${aborted}`,
     `  ${magenta('│')} ${dim('Context Changes'.padEnd(16))} ${session.compactionCount} compactions ${gray('·')} ${session.rollbackCount} rollbacks`,
-    `  ${magenta('│')} ${dim('Records'.padEnd(16))} ${session.recordCount} measured ${gray('·')} ${session.unknownRecords} unknown ${gray('·')} ${session.malformedRecords ? yellow(`${session.malformedRecords} malformed`) : '0 malformed'}`,
+    `  ${magenta('│')} ${dim('Records'.padEnd(16))} ${session.recordCount} measured ${gray('·')} ${session.unknownRecords} unknown ${gray('·')} ${malformed}`,
     `  ${magenta('└──────────────────────────────────────────────────────────────────────────┘')}`,
   ].join('\n');
 
   const lines = [header, '', infoBox, '', tokenBox, '', execBox];
 
   if (session.relationships.length) {
-    lines.push('', `  ${dim('Relationships:')} ${session.relationships.map((edge) => `${edge.type}:${cyan(shortId(edge.sessionId))}`).join(', ')}`);
+    lines.push('', `  ${dim('Relationships:')} ${session.relationships.map((edge) => edge.type + ':' + cyan(shortId(edge.sessionId))).join(', ')}`);
   }
   if (verbose) {
     lines.push(`  ${dim('Sources:')} ${gray(session.sourceFiles.join(', '))}`);

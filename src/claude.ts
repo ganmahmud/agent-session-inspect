@@ -36,7 +36,7 @@ import type {
 // Subagent (Task tool) transcripts are sidechains: either separate files under <session-id>/subagents/ or, in
 // older versions, inline records flagged `isSidechain` without an `agentId`.
 
-type JsonRecord = Record<string, unknown>;
+export type JsonRecord = Record<string, unknown>;
 
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const EXTENDED_CONTEXT_WINDOW = 1_000_000;
@@ -95,11 +95,11 @@ export function claudeSessionKey(source: JsonRecord): string | undefined {
   return source.isSidechain === true && agentId ? `${sessionId}-agent-${agentId}` : sessionId;
 }
 
-function contentBlocks(content: unknown): JsonRecord[] {
+export function contentBlocks(content: unknown): JsonRecord[] {
   return Array.isArray(content) ? content.flatMap((block) => (record(block) ? [record(block)!] : [])) : [];
 }
 
-function blockText(content: unknown): string | undefined {
+export function blockText(content: unknown): string | undefined {
   if (typeof content === 'string') return content.length ? content : undefined;
   const parts = contentBlocks(content).flatMap((block) => (block.type === 'text' && typeof block.text === 'string' ? [block.text] : []));
   return parts.length ? parts.join('\n\n') : undefined;
@@ -110,12 +110,12 @@ function isCommandOutput(value: string): boolean {
   return trimmed.startsWith('<local-command-stdout>') || trimmed.startsWith('<local-command-stderr>') || trimmed.startsWith('<local-command-caveat>');
 }
 
-function isInterruption(value: string): boolean {
+export function isInterruption(value: string): boolean {
   return value.trimStart().startsWith('[Request interrupted by user');
 }
 
 /** Visible prompt text of a user record, or undefined for tool results, meta records and command echoes. */
-function userPrompt(source: JsonRecord): string | undefined {
+export function userPrompt(source: JsonRecord): string | undefined {
   if (source.isMeta === true || source.isCompactSummary === true || source.isVisibleInTranscriptOnly === true) return undefined;
   const content = record(source.message)?.content;
   if (contentBlocks(content).some((block) => block.type === 'tool_result')) return undefined;
@@ -123,7 +123,7 @@ function userPrompt(source: JsonRecord): string | undefined {
   return value && !isCommandOutput(value) ? value : undefined;
 }
 
-function promptTitle(prompt: string): string | undefined {
+export function promptTitle(prompt: string): string | undefined {
   const commandName = /<command-name>([^<]+)<\/command-name>/.exec(prompt)?.[1];
   const args = /<command-args>([^<]*)<\/command-args>/.exec(prompt)?.[1];
   const value = (commandName ? `${commandName.trim()} ${args ?? ''}` : prompt).replace(/\s+/g, ' ').trim();
@@ -163,12 +163,81 @@ interface Observation {
   compaction?: boolean;
   title?: string;
   summary?: string;
+  command?: string;
 }
 
 const fileCache = new Map<string, { mtimeMs: number; size: number; observations: Observation[] }>();
 
 export function clearClaudeScanCache(): void {
   fileCache.clear();
+}
+
+function observeAssistant(observation: Observation, source: JsonRecord, message: JsonRecord | undefined, blocks: JsonRecord[], toolNames: Map<string, string>): void {
+  observation.requestKey = text(message?.id) ?? text(source.requestId) ?? observation.uuid;
+  observation.usage = claudeUsage(message?.usage);
+  const uses = blocks.filter((block) => block.type === 'tool_use');
+  observation.toolCalls = uses.length;
+  for (const use of uses) {
+    const id = text(use.id);
+    if (id) toolNames.set(id, text(use.name) ?? '');
+  }
+  const firstType = text(blocks[0]?.type);
+  if (firstType) observation.kind = `assistant.${firstType}`;
+}
+
+function observeUser(observation: Observation, source: JsonRecord, blocks: JsonRecord[], toolNames: Map<string, string>): void {
+  const results = blocks.filter((block) => block.type === 'tool_result');
+  if (results.length) {
+    observation.kind = 'user.tool_result';
+    observation.toolOutputs = results.length;
+    for (const result of results) {
+      const kind = toolKind(toolNames.get(text(result.tool_use_id) ?? '') ?? '');
+      if (kind === 'exec') observation.execCompleted = (observation.execCompleted ?? 0) + 1;
+      if (kind === 'mcp') observation.mcpCompleted = (observation.mcpCompleted ?? 0) + 1;
+    }
+  }
+  const prompt = userPrompt(source);
+  if (prompt) {
+    observation.prompt = promptTitle(prompt);
+    observation.interrupted = isInterruption(prompt);
+  }
+  if (source.isCompactSummary === true) observation.compaction = true;
+}
+
+function observeSystem(observation: Observation, source: JsonRecord, subtype: string | undefined): void {
+  if (subtype === 'compact_boundary') observation.compaction = true;
+  if (subtype !== 'local_command') return;
+  const content = text(source.content);
+  if (content?.includes('<command-name>')) observation.command = promptTitle(content);
+}
+
+function observeRecord(source: JsonRecord, type: string, key: string, toolNames: Map<string, string>): Observation {
+  const message = record(source.message);
+  const blocks = contentBlocks(message?.content);
+  const subtype = text(source.subtype);
+  const observation: Observation = {
+    key,
+    uuid: text(source.uuid),
+    timestamp: text(source.timestamp),
+    kind: subtype ? `${type}.${subtype}` : type,
+    known: KNOWN_TYPES.has(type),
+    cwd: text(source.cwd),
+    version: text(source.version),
+  };
+  if (key !== text(source.sessionId)) observation.parentId = text(source.sessionId);
+  if (type === 'assistant') observeAssistant(observation, source, message, blocks, toolNames);
+  if (type === 'user') observeUser(observation, source, blocks, toolNames);
+  if (type === 'system') observeSystem(observation, source, subtype);
+  if (type === 'custom-title' || type === 'ai-title') observation.title = text(source.customTitle) ?? text(source.aiTitle) ?? text(source.title);
+  return observation;
+}
+
+function parseJsonLine(raw: string): JsonRecord | undefined {
+  try {
+    return record(JSON.parse(raw)) ?? {};
+  } catch {
+    return undefined;
+  }
 }
 
 async function observeFile(file: string): Promise<Observation[]> {
@@ -181,80 +250,31 @@ async function observeFile(file: string): Promise<Observation[]> {
 
   for await (const raw of input) {
     if (!raw.trim()) continue;
-    let source: JsonRecord;
-    try {
-      source = record(JSON.parse(raw)) ?? {};
-    } catch {
+    const source = parseJsonLine(raw);
+    if (!source) {
       malformed += 1;
       continue;
     }
     const type = text(source.type) ?? 'unknown';
-    if (type === 'summary') {
-      const summary = text(source.summary);
-      if (summary) summaries.push(summary);
-      continue;
-    }
-    const key = claudeSessionKey(source);
+    const summary = type === 'summary' ? text(source.summary) : undefined;
+    if (summary) summaries.push(summary);
+    const key = type === 'summary' ? undefined : claudeSessionKey(source);
     if (!key) continue;
     primaryKey ??= key;
-
-    const message = record(source.message);
-    const blocks = contentBlocks(message?.content);
-    const subtype = text(source.subtype);
-    const observation: Observation = {
-      key,
-      uuid: text(source.uuid),
-      timestamp: text(source.timestamp),
-      kind: subtype ? `${type}.${subtype}` : type,
-      known: KNOWN_TYPES.has(type),
-      cwd: text(source.cwd),
-      version: text(source.version),
-    };
-    if (key !== text(source.sessionId)) observation.parentId = text(source.sessionId);
-
-    if (type === 'assistant') {
-      observation.requestKey = text(message?.id) ?? text(source.requestId) ?? observation.uuid;
-      observation.usage = claudeUsage(message?.usage);
-      const uses = blocks.filter((block) => block.type === 'tool_use');
-      observation.toolCalls = uses.length;
-      for (const use of uses) {
-        const id = text(use.id);
-        if (id) toolNames.set(id, text(use.name) ?? '');
-      }
-      if (blocks[0] && text(blocks[0].type)) observation.kind = `assistant.${text(blocks[0].type)}`;
-    }
-
-    if (type === 'user') {
-      const results = blocks.filter((block) => block.type === 'tool_result');
-      if (results.length) {
-        observation.kind = 'user.tool_result';
-        observation.toolOutputs = results.length;
-        for (const result of results) {
-          const name = toolNames.get(text(result.tool_use_id) ?? '') ?? '';
-          if (toolKind(name) === 'exec') observation.execCompleted = (observation.execCompleted ?? 0) + 1;
-          if (toolKind(name) === 'mcp') observation.mcpCompleted = (observation.mcpCompleted ?? 0) + 1;
-        }
-      }
-      const prompt = userPrompt(source);
-      if (prompt) {
-        observation.prompt = promptTitle(prompt);
-        observation.interrupted = isInterruption(prompt);
-      }
-      if (source.isCompactSummary === true) observation.compaction = true;
-    }
-
-    if (type === 'system' && subtype === 'compact_boundary') observation.compaction = true;
-    if (type === 'custom-title' || type === 'ai-title') observation.title = text(source.customTitle) ?? text(source.aiTitle) ?? text(source.title);
-    observations.push(observation);
+    observations.push(observeRecord(source, type, key, toolNames));
   }
 
-  // Summary records carry no session id; they describe the session the file belongs to.
+  const summary = summaryObservation(file, observations, primaryKey, summaries, malformed);
+  if (summary) observations.push(summary);
+  return observations;
+}
+
+/** Summary records carry no session id; they describe the session the file belongs to. */
+function summaryObservation(file: string, observations: Observation[], primaryKey: string | undefined, summaries: string[], malformed: number): Observation | undefined {
   const fileKey = basename(file, '.jsonl');
   const summaryKey = observations.some((item) => item.key === fileKey) ? fileKey : primaryKey;
-  if (summaryKey && (summaries.length || malformed)) {
-    observations.push({ key: summaryKey, kind: 'summary', known: true, summary: summaries.at(-1), malformed });
-  }
-  return observations;
+  if (!summaryKey || (!summaries.length && !malformed)) return undefined;
+  return { key: summaryKey, kind: 'summary', known: true, summary: summaries.at(-1), malformed };
 }
 
 async function cachedObservations(file: string): Promise<Observation[]> {
@@ -277,6 +297,7 @@ interface MutableClaudeSession extends SessionInventory {
   title?: string;
   summary?: string;
   firstPrompt?: { value: string; timestamp?: string };
+  commands: string[];
 }
 
 function emptySession(id: string): MutableClaudeSession {
@@ -301,7 +322,24 @@ function emptySession(id: string): MutableClaudeSession {
     relationships: [],
     seen: new Set(),
     requests: new Map(),
+    commands: [],
   };
+}
+
+function applyRequest(session: MutableClaudeSession, item: Observation): void {
+  if (!item.requestKey) return;
+  if (item.usage) session.requests.set(item.requestKey, { usage: item.usage, timestamp: item.timestamp });
+  else if (!session.requests.has(item.requestKey)) session.token.missingUsageObservations += 1;
+}
+
+function applyPrompt(session: MutableClaudeSession, item: Observation): void {
+  if (!item.prompt) return;
+  if (item.interrupted) {
+    session.abortedTaskCount += 1;
+    return;
+  }
+  session.taskCount += 1;
+  if (!session.firstPrompt || (item.timestamp ?? '') < (session.firstPrompt.timestamp ?? '')) session.firstPrompt = { value: item.prompt, timestamp: item.timestamp };
 }
 
 function apply(session: MutableClaudeSession, item: Observation): void {
@@ -321,23 +359,24 @@ function apply(session: MutableClaudeSession, item: Observation): void {
   session.cwd ??= item.cwd;
   if (item.version && !session.cliVersions.includes(item.version)) session.cliVersions.push(item.version);
   if (item.parentId && !session.relationships.some((edge) => edge.type === 'parent')) session.relationships.push({ type: 'parent', sessionId: item.parentId });
-  if (item.requestKey) {
-    if (item.usage) session.requests.set(item.requestKey, { usage: item.usage, timestamp: item.timestamp });
-    else if (!session.requests.has(item.requestKey)) session.token.missingUsageObservations += 1;
-  }
+  applyRequest(session, item);
   session.tools.calls += item.toolCalls ?? 0;
   session.tools.outputs += item.toolOutputs ?? 0;
   session.tools.execCompleted += item.execCompleted ?? 0;
   session.tools.mcpCompleted += item.mcpCompleted ?? 0;
-  if (item.prompt) {
-    if (item.interrupted) session.abortedTaskCount += 1;
-    else {
-      session.taskCount += 1;
-      if (!session.firstPrompt || (item.timestamp ?? '') < (session.firstPrompt.timestamp ?? '')) session.firstPrompt = { value: item.prompt, timestamp: item.timestamp };
-    }
-  }
+  applyPrompt(session, item);
   if (item.compaction) session.compactionCount += 1;
   if (item.title) session.title = item.title;
+  if (item.command && !session.commands.includes(item.command)) session.commands.push(item.command);
+}
+
+function titleFor(session: MutableClaudeSession): DisplayTitle | undefined {
+  if (session.title) return { value: session.title, source: 'session_event' };
+  if (session.summary) return { value: session.summary, source: 'session_event' };
+  if (session.firstPrompt) return { value: session.firstPrompt.value, source: 'session_event', observedAt: session.firstPrompt.timestamp };
+  // Sessions that only ran local slash commands (/login, /skills, …) have no prompt to title them by.
+  if (session.commands.length) return { value: session.commands.join(', '), source: 'session_event' };
+  return undefined;
 }
 
 function finish(session: MutableClaudeSession): SessionInventory {
@@ -357,18 +396,12 @@ function finish(session: MutableClaudeSession): SessionInventory {
   }
   session.completedTaskCount = Math.max(0, session.taskCount - session.abortedTaskCount);
   session.projectName = extractProjectName(session.cwd);
-  const title: DisplayTitle | undefined = session.title
-    ? { value: session.title, source: 'session_event' }
-    : session.summary
-      ? { value: session.summary, source: 'session_event' }
-      : session.firstPrompt
-        ? { value: session.firstPrompt.value, source: 'session_event', observedAt: session.firstPrompt.timestamp }
-        : undefined;
+  const title = titleFor(session);
   if (title) session.displayTitle = title;
   session.cliVersions.sort();
   session.sourceFiles.sort();
   session.relationships.sort((a, b) => `${a.type}:${a.sessionId}`.localeCompare(`${b.type}:${b.sessionId}`));
-  for (const key of ['seen', 'requests', 'title', 'summary', 'firstPrompt'] as const) Reflect.deleteProperty(session, key);
+  for (const key of ['seen', 'requests', 'title', 'summary', 'firstPrompt', 'commands'] as const) Reflect.deleteProperty(session, key);
   return session;
 }
 
@@ -405,7 +438,7 @@ export async function scanClaude(path: string): Promise<ScanResult> {
 
 // --- Session detail -------------------------------------------------------------------------------------------
 
-function unifiedDiff(result: JsonRecord): string | undefined {
+export function unifiedDiff(result: JsonRecord): string | undefined {
   const hunks = Array.isArray(result.structuredPatch) ? result.structuredPatch.flatMap((hunk) => (record(hunk) ? [record(hunk)!] : [])) : [];
   const file = (text(result.filePath) ?? 'file').replace(/^\/+/, '');
   let diff: string;
@@ -417,7 +450,7 @@ function unifiedDiff(result: JsonRecord): string | undefined {
     diff = `--- a/${file}\n+++ b/${file}\n${body.join('\n')}`;
   } else if (result.type === 'create' && typeof result.content === 'string') {
     const lines = result.content.split('\n');
-    diff = `--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => `+${line}`).join('\n')}`;
+    diff = `--- /dev/null\n+++ b/${file}\n@@ -0,0 +1,${lines.length} @@\n${lines.map((line) => '+' + line).join('\n')}`;
   } else {
     return undefined;
   }
@@ -431,156 +464,233 @@ function editFromResult(id: string, result: JsonRecord | undefined, timestamp: s
   return { id, timestamp, status: 'completed', files: [{ path, operation, diff: unifiedDiff(result) }], source };
 }
 
-function toolResultText(content: unknown): string | undefined {
+export function toolResultText(content: unknown): string | undefined {
   if (typeof content === 'string') return content;
   const value = blockText(content);
   return value ?? compactJson(content);
 }
 
-export async function readClaudeSessionDetail(session: SessionInventory): Promise<SessionDetail> {
-  const conversation: ConversationEntry[] = [];
-  const hiddenMessages: DebugMessage[] = [];
-  const unattachedActivities: ReplyActivity[] = [];
-  const toolIndex = new Map<string, ToolCallDetail>();
-  const requests = new Map<string, ModelRequestDetail>();
-  const seen = new Set<string>();
-  let currentModel: ModelConfiguration = { source: 'unavailable' };
-  let pending: PendingActivity = newActivity(session.startedAt, currentModel);
-  let turn: TaskTiming | undefined;
-  let turnLastAssistant: ConversationEntry | undefined;
+interface ClaudeRecordContext {
+  source: JsonRecord;
+  type?: string;
+  uuid?: string;
+  timestamp?: string;
+  provenance: SourceReference;
+  message?: JsonRecord;
+  blocks: JsonRecord[];
+}
 
-  const closeTurn = (status: TaskTiming['status']) => {
+function hiddenRole(source: JsonRecord): string {
+  if (source.isCompactSummary === true) return 'compact_summary';
+  return source.isMeta === true ? 'meta' : 'command';
+}
+
+class ClaudeDetailReader {
+  readonly conversation: ConversationEntry[] = [];
+  readonly hiddenMessages: DebugMessage[] = [];
+  readonly unattachedActivities: ReplyActivity[] = [];
+  readonly requests = new Map<string, ModelRequestDetail>();
+  private readonly toolIndex = new Map<string, ToolCallDetail>();
+  private readonly seen = new Set<string>();
+  private currentModel: ModelConfiguration = { source: 'unavailable' };
+  private pending: PendingActivity;
+  private turn: TaskTiming | undefined;
+  private turnLastAssistant: ConversationEntry | undefined;
+
+  private readonly session: SessionInventory;
+
+  constructor(session: SessionInventory) {
+    this.session = session;
+    this.pending = newActivity(session.startedAt, this.currentModel);
+  }
+
+  /** Whether a record belongs to this session, counting replayed records (same uuid) once. */
+  private accepts(source: JsonRecord, sidechainInline: boolean, uuid?: string): boolean {
+    const ownRecord = claudeSessionKey(source) === this.session.id || (sidechainInline && text(source.sessionId) === this.session.id);
+    if (!ownRecord) return false;
+    if (!uuid) return true;
+    if (this.seen.has(uuid)) return false;
+    this.seen.add(uuid);
+    return true;
+  }
+
+  read(source: JsonRecord, provenance: SourceReference): void {
+    const sidechainInline = source.isSidechain === true && !text(source.agentId);
+    const uuid = text(source.uuid);
+    if (!this.accepts(source, sidechainInline, uuid)) return;
+    const message = record(source.message);
+    const ctx: ClaudeRecordContext = { source, type: text(source.type), uuid, timestamp: text(source.timestamp), provenance, message, blocks: contentBlocks(message?.content) };
+    if (sidechainInline) this.sidechain(ctx);
+    else if (ctx.type === 'assistant') this.assistant(ctx);
+    else if (ctx.type === 'user') this.user(ctx);
+    else if (ctx.type === 'system') this.system(ctx);
+  }
+
+  finish(): void {
+    this.flushPending();
+    this.closeTurn('completed');
+  }
+
+  private hide(ctx: ClaudeRecordContext, role: string, value: string): void {
+    const { file, line } = ctx.provenance;
+    this.hiddenMessages.push({ id: `${file}:${line}`, role, timestamp: ctx.timestamp, text: value, source: ctx.provenance });
+  }
+
+  /** Inline subagent traffic from older Claude Code versions: keep it out of the main conversation. */
+  private sidechain(ctx: ClaudeRecordContext): void {
+    const value = blockText(ctx.message?.content);
+    if (value) this.hide(ctx, `sidechain:${text(ctx.message?.role) ?? ctx.type ?? 'unknown'}`, value);
+  }
+
+  private system(ctx: ClaudeRecordContext): void {
+    const content = text(ctx.source.content);
+    const subtype = text(ctx.source.subtype);
+    if (content) this.hide(ctx, subtype ? 'system:' + subtype : 'system', content);
+  }
+
+  private assistant(ctx: ClaudeRecordContext): void {
+    const { message, source, timestamp, provenance } = ctx;
+    const model = text(message?.model);
+    if (model && model !== '<synthetic>') this.currentModel = { name: model, provider: 'anthropic', source: 'message', observedAt: timestamp };
+    this.recordRequest(text(message?.id) ?? text(source.requestId) ?? `${provenance.file}:${provenance.line}`, claudeUsage(message?.usage), ctx);
+    for (const block of ctx.blocks) {
+      if (block.type === 'tool_use') this.toolUse(block, ctx);
+      if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) this.reply(block.text, ctx);
+    }
+  }
+
+  private recordRequest(requestKey: string, usage: TokenUsage | undefined, ctx: ClaudeRecordContext): void {
+    if (!usage) return;
+    const existing = this.requests.get(requestKey);
+    if (existing) {
+      existing.usage = usage;
+      return;
+    }
+    const request: ModelRequestDetail = { id: requestKey, timestamp: ctx.timestamp, usage, evidence: 'reported_snapshot', source: ctx.provenance };
+    this.requests.set(requestKey, request);
+    this.pending.modelRequests.push(request);
+  }
+
+  private toolUse(block: JsonRecord, ctx: ClaudeRecordContext): void {
+    const id = text(block.id) ?? `${ctx.provenance.file}:${ctx.provenance.line}`;
+    const name = text(block.name) ?? 'tool call';
+    toolFor(this.pending, this.toolIndex, id, { name, kind: toolKind(name), startedAt: ctx.timestamp, input: compactJson(block.input), source: ctx.provenance });
+  }
+
+  private reply(value: string, ctx: ClaudeRecordContext): void {
+    this.pending.model = this.currentModel;
+    const entry: ConversationEntry = {
+      id: `${ctx.provenance.file}:${ctx.provenance.line}`,
+      role: 'assistant',
+      kind: 'conversation',
+      timestamp: ctx.timestamp,
+      text: value,
+      source: ctx.provenance,
+      activity: finalise(this.pending, ctx.timestamp),
+    };
+    this.conversation.push(entry);
+    this.turnLastAssistant = entry;
+    if (this.turn) this.turn.completedAt = ctx.timestamp;
+    this.pending = newActivity(ctx.timestamp, this.currentModel);
+  }
+
+  private user(ctx: ClaudeRecordContext): void {
+    const results = ctx.blocks.filter((block) => block.type === 'tool_result');
+    if (results.length) {
+      for (const result of results) this.toolResult(result, results.length === 1, ctx);
+      return;
+    }
+    const prompt = userPrompt(ctx.source);
+    if (prompt === undefined) {
+      const value = blockText(ctx.message?.content);
+      if (value) this.hide(ctx, hiddenRole(ctx.source), value);
+      return;
+    }
+    this.flushPending();
+    if (isInterruption(prompt)) this.closeTurn('aborted');
+    else {
+      this.closeTurn('completed');
+      this.pending = newActivity(ctx.timestamp, this.currentModel);
+      this.turn = { id: ctx.uuid, startedAt: ctx.timestamp, completedAt: ctx.timestamp, status: 'open' };
+    }
+    const { file, line } = ctx.provenance;
+    this.conversation.push({ id: `${file}:${line}`, role: 'user', kind: 'conversation', timestamp: ctx.timestamp, text: prompt, source: ctx.provenance });
+  }
+
+  private toolResult(result: JsonRecord, onlyResult: boolean, ctx: ClaudeRecordContext): void {
+    const { timestamp, provenance } = ctx;
+    const id = text(result.tool_use_id) ?? `${provenance.file}:${provenance.line}`;
+    const tool = this.toolIndex.get(id) ?? toolFor(this.pending, this.toolIndex, id, { name: 'tool call', kind: 'unknown', source: provenance });
+    const isError = result.is_error === true;
+    tool.completedAt = timestamp;
+    tool.status = isError ? 'error' : 'completed';
+    tool.output = compactJson(toolResultText(result.content));
+    tool.durationMs ??= timestampDelta(tool.startedAt, tool.completedAt);
+    if (this.turn) this.turn.completedAt = timestamp;
+    if (tool.kind === 'patch' && onlyResult) {
+      const edit = editFromResult(id, record(ctx.source.toolUseResult), timestamp, provenance, isError);
+      if (edit) this.pending.edits.push(edit);
+    }
+  }
+
+  // Claude Code often runs a batch of tools without writing text afterwards (or between batches); keep that work in
+  // the conversation as a text-less reply instead of dropping it into the unattached debug bucket.
+  private flushPending(): void {
+    const pending = this.pending;
+    if (!activityHasData(pending)) return;
+    const timestamps = [
+      ...pending.tools.map((tool) => tool.completedAt ?? tool.startedAt),
+      ...pending.modelRequests.map((request) => request.timestamp),
+    ].filter((value): value is string => Boolean(value));
+    const completedAt = timestamps.sort((a, b) => a.localeCompare(b)).at(-1);
+    const first = pending.tools[0]?.source ?? pending.modelRequests[0]?.source;
+    pending.model = this.currentModel;
+    const entry: ConversationEntry = {
+      id: first ? `${first.file}:${first.line}:activity` : `activity-${this.conversation.length}`,
+      role: 'assistant',
+      kind: 'conversation',
+      timestamp: completedAt ?? pending.startedAt,
+      text: '',
+      phase: 'tool_activity',
+      source: first ?? { file: this.session.sourceFiles[0] ?? '', line: 0 },
+      activity: finalise(pending, completedAt),
+    };
+    this.conversation.push(entry);
+    this.turnLastAssistant = entry;
+    if (this.turn && completedAt && completedAt > (this.turn.completedAt ?? '')) this.turn.completedAt = completedAt;
+    this.pending = newActivity(completedAt, this.currentModel);
+  }
+
+  private closeTurn(status: TaskTiming['status']): void {
+    const turn = this.turn;
     if (!turn) return;
     turn.status = status;
     turn.durationMs = timestampDelta(turn.startedAt, turn.completedAt);
-    if (turnLastAssistant?.activity) {
-      turnLastAssistant.activity.task = turn;
-      turnLastAssistant.activity.breakdown = calculateBreakdown(turnLastAssistant.activity);
+    const activity = this.turnLastAssistant?.activity;
+    if (activity) {
+      activity.task = turn;
+      activity.breakdown = calculateBreakdown(activity);
     }
-    turn = undefined;
-    turnLastAssistant = undefined;
-  };
+    this.turn = undefined;
+    this.turnLastAssistant = undefined;
+  }
+}
 
+export async function readClaudeSessionDetail(session: SessionInventory): Promise<SessionDetail> {
+  const reader = new ClaudeDetailReader(session);
   for (const file of session.sourceFiles) {
     const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
     let line = 0;
     for await (const raw of input) {
       line += 1;
-      if (!raw.trim()) continue;
-      let source: JsonRecord;
-      try {
-        source = record(JSON.parse(raw)) ?? {};
-      } catch {
-        continue;
-      }
-      const type = text(source.type);
-      const sidechainInline = source.isSidechain === true && !text(source.agentId);
-      if (claudeSessionKey(source) !== session.id && !(sidechainInline && text(source.sessionId) === session.id)) continue;
-      const uuid = text(source.uuid);
-      if (uuid) {
-        if (seen.has(uuid)) continue;
-        seen.add(uuid);
-      }
-      const timestamp = text(source.timestamp);
-      const provenance: SourceReference = { file, line };
-      const message = record(source.message);
-      const blocks = contentBlocks(message?.content);
-
-      if (sidechainInline) {
-        // Inline subagent traffic from older Claude Code versions: keep it out of the main conversation.
-        const value = blockText(message?.content);
-        if (value) hiddenMessages.push({ id: `${file}:${line}`, role: `sidechain:${text(message?.role) ?? type ?? 'unknown'}`, timestamp, text: value, source: provenance });
-        continue;
-      }
-
-      if (type === 'assistant') {
-        const model = text(message?.model);
-        if (model && model !== '<synthetic>') currentModel = { name: model, provider: 'anthropic', source: 'message', observedAt: timestamp };
-        const requestKey = text(message?.id) ?? text(source.requestId) ?? `${file}:${line}`;
-        const usage = claudeUsage(message?.usage);
-        const existing = requests.get(requestKey);
-        if (existing) {
-          if (usage) existing.usage = usage;
-        } else if (usage) {
-          const request: ModelRequestDetail = { id: requestKey, timestamp, usage, evidence: 'reported_snapshot', source: provenance };
-          requests.set(requestKey, request);
-          pending.modelRequests.push(request);
-        }
-
-        for (const block of blocks) {
-          if (block.type === 'tool_use') {
-            const id = text(block.id) ?? `${file}:${line}`;
-            const name = text(block.name) ?? 'tool call';
-            toolFor(pending, toolIndex, id, { name, kind: toolKind(name), startedAt: timestamp, input: compactJson(block.input), source: provenance });
-          }
-          if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-            pending.model = currentModel;
-            const entry: ConversationEntry = {
-              id: `${file}:${line}`,
-              role: 'assistant',
-              kind: 'conversation',
-              timestamp,
-              text: block.text,
-              source: provenance,
-              activity: finalise(pending, timestamp),
-            };
-            conversation.push(entry);
-            turnLastAssistant = entry;
-            if (turn) turn.completedAt = timestamp;
-            pending = newActivity(timestamp, currentModel);
-          }
-        }
-        continue;
-      }
-
-      if (type === 'user') {
-        const results = blocks.filter((block) => block.type === 'tool_result');
-        for (const result of results) {
-          const id = text(result.tool_use_id) ?? `${file}:${line}`;
-          const tool = toolIndex.get(id) ?? toolFor(pending, toolIndex, id, { name: 'tool call', kind: 'unknown', source: provenance });
-          const isError = result.is_error === true;
-          tool.completedAt = timestamp;
-          tool.status = isError ? 'error' : 'completed';
-          tool.output = compactJson(toolResultText(result.content));
-          tool.durationMs ??= timestampDelta(tool.startedAt, tool.completedAt);
-          if (turn) turn.completedAt = timestamp;
-          if (tool.kind === 'patch' && results.length === 1) {
-            const edit = editFromResult(id, record(source.toolUseResult), timestamp, provenance, isError);
-            if (edit) pending.edits.push(edit);
-          }
-        }
-        if (results.length) continue;
-
-        const prompt = userPrompt(source);
-        if (prompt === undefined) {
-          const value = blockText(message?.content);
-          if (value) hiddenMessages.push({ id: `${file}:${line}`, role: source.isCompactSummary === true ? 'compact_summary' : source.isMeta === true ? 'meta' : 'command', timestamp, text: value, source: provenance });
-          continue;
-        }
-        const interrupted = isInterruption(prompt);
-        if (interrupted) closeTurn('aborted');
-        else {
-          closeTurn('completed');
-          if (activityHasData(pending)) unattachedActivities.push(finalise(pending));
-          pending = newActivity(timestamp, currentModel);
-          turn = { id: uuid, startedAt: timestamp, completedAt: timestamp, status: 'open' };
-        }
-        conversation.push({ id: `${file}:${line}`, role: 'user', kind: 'conversation', timestamp, text: prompt, source: provenance });
-        continue;
-      }
-
-      if (type === 'system') {
-        const content = text(source.content);
-        if (content) hiddenMessages.push({ id: `${file}:${line}`, role: `system${text(source.subtype) ? `:${text(source.subtype)}` : ''}`, timestamp, text: content, source: provenance });
-      }
+      const source = raw.trim() ? parseJsonLine(raw) : undefined;
+      if (source) reader.read(source, { file, line });
     }
   }
-
-  closeTurn('completed');
-  if (activityHasData(pending)) unattachedActivities.push(finalise(pending));
+  reader.finish();
 
   // Snapshots are cumulative over unique model requests, mirroring Codex `total_token_usage`.
-  const ordered = [...requests.values()].sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
+  const ordered = [...reader.requests.values()].sort((a, b) => (a.timestamp ?? '').localeCompare(b.timestamp ?? ''));
   const modelStepTotal: TokenUsage = {};
   const snapshots: UsageSnapshot[] = [];
   const window = session.token.modelContextWindow ?? contextWindow(Math.max(0, ...ordered.map((request) => request.usage.inputTokens ?? 0)));
@@ -592,8 +702,8 @@ export async function readClaudeSessionDetail(session: SessionInventory): Promis
 
   return {
     ...session,
-    conversation,
+    conversation: reader.conversation,
     usage: { latest: snapshots.at(-1), snapshots, modelStepTotal, modelStepCount: ordered.length, evidence: 'reported_snapshot' },
-    debug: { hiddenMessages, unattachedActivities, malformedRecords: session.malformedRecords, unknownRecords: session.unknownRecords },
+    debug: { hiddenMessages: reader.hiddenMessages, unattachedActivities: reader.unattachedActivities, malformedRecords: session.malformedRecords, unknownRecords: session.unknownRecords },
   };
 }

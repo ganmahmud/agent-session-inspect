@@ -43,66 +43,52 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 	SUMMARY: new Set(['class', 'style'])
 };
 
+const DROPPED_TAGS = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED']);
+const UNSAFE_URL_SCHEMES = ['javascript:', 'vbscript:', 'data:'];
+
+/** Removes dangerous elements outright; other disallowed elements are replaced by their cleaned children. */
+function unwrapDisallowed(el: HTMLElement, tag: string) {
+	if (DROPPED_TAGS.has(tag)) {
+		el.remove();
+		return;
+	}
+	const fragment = document.createDocumentFragment();
+	while (el.firstChild) {
+		fragment.appendChild(el.firstChild);
+	}
+	cleanNode(fragment);
+	el.replaceWith(fragment);
+}
+
+function isAllowedAttribute(tag: string, name: string, value: string): boolean {
+	if (name.startsWith('on') || !ALLOWED_ATTRS[tag]?.has(name)) return false;
+	if (name !== 'href') return true;
+	const url = value.trim().toLowerCase();
+	return !UNSAFE_URL_SCHEMES.some((scheme) => url.startsWith(scheme));
+}
+
+function cleanAttributes(el: HTMLElement, tag: string) {
+	for (const attr of Array.from(el.attributes)) {
+		if (!isAllowedAttribute(tag, attr.name.toLowerCase(), attr.value))
+			el.removeAttribute(attr.name);
+	}
+}
+
 function cleanNode(node: Node) {
-	const children = Array.from(node.childNodes);
-	for (const child of children) {
-		if (child.nodeType === 1) {
-			// Element node
-			const el = child as HTMLElement;
-			const tag = el.tagName.toUpperCase();
-
-			if (!ALLOWED_TAGS.has(tag)) {
-				if (
-					tag === 'SCRIPT' ||
-					tag === 'STYLE' ||
-					tag === 'IFRAME' ||
-					tag === 'OBJECT' ||
-					tag === 'EMBED'
-				) {
-					el.remove();
-				} else {
-					const fragment = document.createDocumentFragment();
-					while (el.firstChild) {
-						fragment.appendChild(el.firstChild);
-					}
-					cleanNode(fragment);
-					el.replaceWith(fragment);
-				}
-				continue;
-			}
-
-			const allowedAttrs = ALLOWED_ATTRS[tag];
-			const attrs = Array.from(el.attributes);
-			for (const attr of attrs) {
-				const attrName = attr.name.toLowerCase();
-
-				if (attrName.startsWith('on')) {
-					el.removeAttribute(attr.name);
-					continue;
-				}
-
-				if (!allowedAttrs || !allowedAttrs.has(attrName)) {
-					el.removeAttribute(attr.name);
-					continue;
-				}
-
-				if (attrName === 'href') {
-					const val = attr.value.trim().toLowerCase();
-					if (
-						val.startsWith('javascript:') ||
-						val.startsWith('vbscript:') ||
-						val.startsWith('data:')
-					) {
-						el.removeAttribute(attr.name);
-					}
-				}
-			}
-
-			cleanNode(el);
-		} else if (child.nodeType === 8) {
-			// Comment node
+	for (const child of Array.from(node.childNodes)) {
+		if (child.nodeType === Node.COMMENT_NODE) {
 			child.remove();
+			continue;
 		}
+		if (child.nodeType !== Node.ELEMENT_NODE) continue;
+		const el = child as HTMLElement;
+		const tag = el.tagName.toUpperCase();
+		if (!ALLOWED_TAGS.has(tag)) {
+			unwrapDisallowed(el, tag);
+			continue;
+		}
+		cleanAttributes(el, tag);
+		cleanNode(el);
 	}
 }
 
@@ -116,36 +102,54 @@ export function sanitizeClientHtml(html: string): string {
 	return doc.body.innerHTML;
 }
 
+// Injected instruction sections that are collapsed by default. A section runs from its heading line
+// up to the next line that starts one of its `ends` markers (or the end of the text).
+const CONTEXT_SECTIONS = [
+	{
+		start: 'agents.md instructions',
+		ends: ['codebase knowledge graph', 'rtk (rust token killer)', '<user_request>']
+	},
+	{
+		start: 'codebase knowledge graph',
+		ends: ['rtk (rust token killer)', 'agents.md', '<user_request>']
+	},
+	{
+		start: 'rtk (rust token killer)',
+		ends: ['agents.md', 'codebase knowledge graph', '<user_request>']
+	}
+];
+
+function stripHeadingMarks(line: string): string {
+	let at = 0;
+	while (line[at] === '#') at += 1;
+	return at ? line.slice(at).trimStart() : line;
+}
+
+function contextBlock(title: string, body: string[]): string {
+	return `\n<details class="system-context-block"><summary><strong>${title.trim()}</strong> <span class="system-context-badge">System Context</span></summary><div class="system-context-body">\n\n${body.join('\n').trim()}\n\n</div></details>\n`;
+}
+
 function preprocessSystemContext(value: string): string {
 	if (!value) return '';
-
-	let processed = value;
-
-	// Wrap AGENTS.md instructions section
-	processed = processed.replace(
-		/(?:^|\n)(#+\s*)?(AGENTS\.md instructions[^\n]*)\n([\s\S]*?)(?=\n(?:#+\s*)?(?:Codebase Knowledge Graph|RTK \(Rust Token Killer\)|<USER_REQUEST>|$)|$)/gi,
-		(match, hash, title, content) => {
-			return `\n\n<details class="system-context-block"><summary><strong>${title.trim()}</strong> <span class="system-context-badge">System Context</span></summary><div class="system-context-body">\n\n${content.trim()}\n\n</div></details>\n\n`;
+	const out: string[] = [];
+	let current:
+		{ section: (typeof CONTEXT_SECTIONS)[number]; title: string; body: string[] } | undefined;
+	for (const line of value.split('\n')) {
+		const heading = stripHeadingMarks(line);
+		const lower = heading.toLowerCase();
+		if (current?.section.ends.some((marker) => lower.startsWith(marker))) {
+			out.push(contextBlock(current.title, current.body));
+			current = undefined;
 		}
-	);
-
-	// Wrap Codebase Knowledge Graph section
-	processed = processed.replace(
-		/(?:^|\n)(#+\s*)?(Codebase Knowledge Graph[^\n]*)\n([\s\S]*?)(?=\n(?:#+\s*)?(?:RTK \(Rust Token Killer\)|AGENTS\.md|<USER_REQUEST>|$)|$)/gi,
-		(match, hash, title, content) => {
-			return `\n\n<details class="system-context-block"><summary><strong>${title.trim()}</strong> <span class="system-context-badge">System Context</span></summary><div class="system-context-body">\n\n${content.trim()}\n\n</div></details>\n\n`;
-		}
-	);
-
-	// Wrap RTK (Rust Token Killer) section
-	processed = processed.replace(
-		/(?:^|\n)(#+\s*)?(RTK \(Rust Token Killer\)[^\n]*)\n([\s\S]*?)(?=\n(?:#+\s*)?(?:AGENTS\.md|Codebase Knowledge Graph|<USER_REQUEST>|$)|$)/gi,
-		(match, hash, title, content) => {
-			return `\n\n<details class="system-context-block"><summary><strong>${title.trim()}</strong> <span class="system-context-badge">System Context</span></summary><div class="system-context-body">\n\n${content.trim()}\n\n</div></details>\n\n`;
-		}
-	);
-
-	return processed;
+		const section = current
+			? undefined
+			: CONTEXT_SECTIONS.find((item) => lower.startsWith(item.start));
+		if (section) current = { section, title: heading, body: [] };
+		else if (current) current.body.push(line);
+		else out.push(line);
+	}
+	if (current) out.push(contextBlock(current.title, current.body));
+	return out.join('\n');
 }
 
 export function renderMarkdown(value: string): string {
@@ -171,7 +175,7 @@ export function toPlainText(markdown: string): string {
 			// Remove images ![alt](url) -> alt
 			.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
 			// Remove links [text](url) -> text
-			.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+			.replace(/\[([^[\]]+)\]\([^()]+\)/g, '$1')
 			// Remove bold/italic markers (*, _, ~~)
 			.replace(/(\*\*|__|\*|_|~~)(.*?)\1/g, '$2')
 			// Remove headers (# Header)
@@ -179,8 +183,8 @@ export function toPlainText(markdown: string): string {
 			// Remove blockquotes (> Quote)
 			.replace(/^>\s+/gm, '')
 			// Remove list bullets (- item, * item, 1. item)
-			.replace(/^[\s]*[-*+]\s+/gm, '')
-			.replace(/^[\s]*\d+\.\s+/gm, '')
+			.replace(/^[ \t]*[-*+][ \t]+/gm, '')
+			.replace(/^[ \t]*\d+\.[ \t]+/gm, '')
 			// Remove horizontal rules
 			.replace(/^[-*_]{3,}\s*$/gm, '')
 			// Clean up excessive blank lines

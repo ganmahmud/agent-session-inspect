@@ -5,18 +5,21 @@ export function agentLabel(session?: { agent?: SessionInventory['agent'] }): str
 	return session?.agent === 'claude' ? 'Claude Code' : 'Codex';
 }
 
+// Path classification only: nothing is read from or written to these locations.
+const TEMP_PATH_PREFIXES = ['/tmp/', '/private/tmp/', '/var/folders/', '/private/var/']; // NOSONAR
+
 export function isSystemOrTempPath(pathStr: string): boolean {
 	const normalized = pathStr.replace(/\\/g, '/').toLowerCase();
-	if (
-		normalized.startsWith('/tmp/') ||
-		normalized.startsWith('/private/tmp/') ||
-		normalized.startsWith('/var/folders/') ||
-		normalized.startsWith('/private/var/') ||
+	return (
+		TEMP_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix)) ||
 		normalized.includes('/appdata/local/temp/')
-	) {
-		return true;
-	}
-	return false;
+	);
+}
+
+function trimTrailingSeparators(value: string): string {
+	let end = value.length;
+	while (end > 0 && (value[end - 1] === '/' || value[end - 1] === '\\')) end -= 1;
+	return value.slice(0, end);
 }
 
 export function extractProjectName(cwd?: string, explicitName?: string): string | undefined {
@@ -24,7 +27,7 @@ export function extractProjectName(cwd?: string, explicitName?: string): string 
 		return explicitName.trim();
 	}
 	if (!cwd || !cwd.trim()) return undefined;
-	const trimmed = cwd.trim().replace(/[\\/]+$/, '');
+	const trimmed = trimTrailingSeparators(cwd.trim());
 	if (!trimmed) return undefined;
 	if (isSystemOrTempPath(trimmed)) return undefined;
 

@@ -164,6 +164,46 @@ test('assembles a visible conversation with source-order activity and exact mode
 	}
 });
 
+test('surfaces turn settings, git context, reasoning summaries, plans and turn outcomes', async () => {
+	const directory = tempDirectory();
+	try {
+		const item = (value: unknown, timestamp: string) => jsonLine('event_msg', { type: 'item_completed', item: value }, timestamp);
+		const log = writeLog(directory, 'outcomes.jsonl', [
+			jsonLine('session_meta', { id: sessionOne, git: { branch: 'main', commit_hash: 'abc1234def', repository_url: 'git@example.com:repo.git' } }),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-1' }, '2026-08-12T10:00:00.000Z'),
+			item({ type: 'UserMessage', content: [{ type: 'text', text: 'Plan it.' }] }, '2026-08-12T10:00:01.000Z'),
+			jsonLine('turn_context', { model: 'gpt-5.6-terra', effort: 'high', approval_policy: 'on-request', sandbox_policy: { type: 'workspace-write' } }, '2026-08-12T10:00:01.100Z'),
+			item({ type: 'Reasoning', id: 'rs-1', summary_text: ['**Reading code**'] }, '2026-08-12T10:00:02.000Z'),
+			jsonLine('response_item', { type: 'reasoning', id: 'rs-1', summary: [{ type: 'summary_text', text: '**Reading code**' }] }, '2026-08-12T10:00:02.000Z'),
+			item({ type: 'Reasoning', id: 'rs-2', summary_text: ['**Reading code**'] }, '2026-08-12T10:00:02.500Z'),
+			item({ type: 'Plan', id: 'plan-1', text: '# The plan' }, '2026-08-12T10:00:03.000Z'),
+			jsonLine('event_msg', { type: 'task_complete', turn_id: 'turn-1', duration_ms: 3000 }, '2026-08-12T10:00:04.000Z'),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-2' }, '2026-08-12T10:01:00.000Z'),
+			item({ type: 'UserMessage', content: [{ type: 'text', text: 'Go.' }] }, '2026-08-12T10:01:01.000Z'),
+			item({ type: 'AgentMessage', content: [{ type: 'text', text: 'Out of credits.' }] }, '2026-08-12T10:01:02.000Z'),
+			jsonLine('event_msg', { type: 'task_complete', turn_id: 'turn-2', error: { message: 'Workspace is out of credits.' } }, '2026-08-12T10:01:03.000Z'),
+			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-3' }, '2026-08-12T10:02:00.000Z'),
+			item({ type: 'UserMessage', content: [{ type: 'text', text: 'Again.' }] }, '2026-08-12T10:02:01.000Z'),
+			item({ type: 'AgentMessage', content: [{ type: 'text', text: 'Starting.' }] }, '2026-08-12T10:02:02.000Z'),
+			jsonLine('event_msg', { type: 'turn_aborted', turn_id: 'turn-3', reason: 'interrupted' }, '2026-08-12T10:02:03.000Z'),
+		]);
+		const scan = await scanCodex(log);
+		assert.deepEqual(scan.sessions[0].git, { branch: 'main', commit: 'abc1234def', repositoryUrl: 'git@example.com:repo.git' });
+		const detail = await readCodexSessionDetail(scan.sessions[0]);
+		const [, plan, , failed, , aborted] = detail.conversation;
+		assert.equal(plan.role, 'assistant');
+		assert.equal(plan.phase, 'plan');
+		assert.equal(plan.text, '# The plan');
+		assert.deepEqual(plan.activity?.settings, { effort: 'high', approvalPolicy: 'on-request', sandbox: 'workspace-write' });
+		assert.deepEqual(plan.activity?.reasoning, ['**Reading code**']);
+		assert.equal(failed.activity?.task?.error, 'Workspace is out of credits.');
+		assert.equal(aborted.activity?.task?.status, 'aborted');
+		assert.equal(aborted.activity?.task?.abortReason, 'interrupted');
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test('falls back to legacy response messages and merges overlapping tool time', async () => {
 	const directory = tempDirectory();
 	try {
@@ -315,13 +355,13 @@ test('incrementally caches unchanged session files and produces identical result
 	clearScanCache();
 	const directory = tempDirectory();
 	try {
-		const fileA = writeLog(directory, 'a.jsonl', [
+		writeLog(directory, 'a.jsonl', [
 			jsonLine('session_meta', { id: sessionOne, cwd: '/repo/a' }),
 			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Session A' }),
 			jsonLine('event_msg', { type: 'task_started', turn_id: 'turn-a' }),
 			jsonLine('event_msg', { type: 'task_complete', turn_id: 'turn-a' }),
 		]);
-		const fileB = writeLog(directory, 'b.jsonl', [
+		writeLog(directory, 'b.jsonl', [
 			jsonLine('session_meta', { id: sessionTwo, cwd: '/repo/b' }),
 			jsonLine('event_msg', { type: 'thread_name_updated', thread_name: 'Session B' }),
 		]);
@@ -361,7 +401,7 @@ test('extracts project names and groups sessions by project workspace', async ()
 	assert.equal(extractProjectName('C:\\Users\\dev\\projects\\backend-api\\'), 'backend-api');
 	assert.equal(extractProjectName('/Users/dev/.buzz'), undefined);
 	assert.equal(extractProjectName('/Users/dev/.codex'), undefined);
-	assert.equal(extractProjectName('/tmp/scratch-agent'), undefined);
+	assert.equal(extractProjectName('/tmp/scratch-agent'), undefined); // NOSONAR: path classification only
 	assert.equal(extractProjectName('/Users/dev'), undefined);
 	assert.equal(extractProjectName(undefined), undefined);
 	assert.equal(extractProjectName('', 'Explicit Project'), 'Explicit Project');

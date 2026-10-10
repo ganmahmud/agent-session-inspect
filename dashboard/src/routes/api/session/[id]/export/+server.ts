@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import { sessionDetail } from '$lib/server/session-data';
+import { exportableClaudeView, sessionDetail } from '$lib/server/session-data';
 
 export async function GET({ params }) {
 	const detail = await sessionDetail(params.id);
@@ -9,10 +9,13 @@ export async function GET({ params }) {
 	const date = detail.startedAt ? new Date(detail.startedAt).toISOString().slice(0, 10) : 'unknown';
 	const filename = `session-${shortId}-${date}.json`;
 
+	// Claude Code exports also carry the Claude view (with screenshots) so imports keep that layout.
+	const claudeView = detail.agent === 'claude' ? await exportableClaudeView(detail.id) : undefined;
 	const envelope = {
 		exportVersion: 1,
 		exportedAt: new Date().toISOString(),
-		session: detail
+		session: detail,
+		...(claudeView ? { claudeView } : {})
 	};
 
 	return new Response(JSON.stringify(envelope, null, 2), {

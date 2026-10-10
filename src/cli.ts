@@ -48,48 +48,72 @@ Sessions are read from $CODEX_HOME/sessions (~/.codex/sessions) and
 $CLAUDE_CONFIG_DIR/projects (~/.claude/projects).`;
 }
 
+interface Flags {
+  format: Arguments['format'];
+  verbose: boolean;
+  ui: boolean;
+  web: boolean;
+  port: number;
+  agent?: AgentKind;
+}
+
+/** Applies one option to `flags`; returns how many extra values it consumed, or undefined if it is not an option. */
+function applyFlag(flags: Flags, value: string, next: string | undefined): number | undefined {
+  switch (value) {
+    case '--format':
+      if (next !== 'text' && next !== 'json') throw new Error('--format must be text or json');
+      flags.format = next;
+      return 1;
+    case '--verbose':
+      flags.verbose = true;
+      return 0;
+    case '--ui':
+    case '--tui':
+      flags.ui = true;
+      return 0;
+    case '--web':
+      flags.web = true;
+      return 0;
+    case '--port': {
+      const port = Number(next);
+      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error('--port must be an integer from 0 to 65535');
+      flags.port = port;
+      return 1;
+    }
+    case '--agent':
+      flags.agent = parseAgent(next);
+      return 1;
+    case '--help':
+    case '-h':
+      throw new Error(usage());
+    default:
+      return undefined;
+  }
+}
+
+function command(positional: string[], flags: Flags): Arguments {
+  const [first, second] = positional;
+  const base = { ...flags };
+  if (first === 'web' || flags.web) return { ...base, command: 'serve', target: first === 'web' ? second : first, web: true };
+  if (first === 'tui' || first === 'ui' || flags.ui) return { ...base, command: 'tui', target: first === 'tui' || first === 'ui' ? second : first, ui: true };
+  if ((first === 'codex' || first === 'claude') && second === 'scan') return { ...base, command: 'scan', target: positional[2], agent: first };
+  if (first === 'scan') return { ...base, command: 'scan', target: second };
+  if (first === 'inspect' && second) return { ...base, command: 'inspect', target: positional.slice(1).join(' ') };
+  if (first === 'serve') return { ...base, command: 'serve', target: second, web: true };
+  if (!positional.length) return { ...base, command: 'tui', target: undefined, ui: true };
+  throw new Error(usage());
+}
+
 function parse(argv: string[]): Arguments {
   const values = argv.slice(2);
-  let format: Arguments['format'] = 'text';
-  let verbose = false;
-  let ui = false;
-  let web = false;
-  let port = 4318;
-  let agent: AgentKind | undefined;
+  const flags: Flags = { format: 'text', verbose: false, ui: false, web: false, port: 4318 };
   const positional: string[] = [];
   for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value === '--format') {
-      const next = values[++index];
-      if (next !== 'text' && next !== 'json') throw new Error('--format must be text or json');
-      format = next;
-    } else if (value === '--verbose') {
-      verbose = true;
-    } else if (value === '--ui' || value === '--tui') {
-      ui = true;
-    } else if (value === '--web') {
-      web = true;
-    } else if (value === '--port') {
-      const next = Number(values[++index]);
-      if (!Number.isInteger(next) || next < 0 || next > 65535) throw new Error('--port must be an integer from 0 to 65535');
-      port = next;
-    } else if (value === '--agent') {
-      agent = parseAgent(values[++index]);
-    } else if (value === '--help' || value === '-h') {
-      throw new Error(usage());
-    } else {
-      positional.push(value);
-    }
+    const consumed = applyFlag(flags, values[index], values[index + 1]);
+    if (consumed === undefined) positional.push(values[index]);
+    else index += consumed;
   }
-
-  if (positional[0] === 'web' || web) return { command: 'serve', target: positional[0] === 'web' ? positional[1] : positional[0], agent, format, verbose, ui, web: true, port };
-  if (positional[0] === 'tui' || positional[0] === 'ui' || ui) return { command: 'tui', target: positional[0] === 'tui' || positional[0] === 'ui' ? positional[1] : positional[0], agent, format, verbose, ui: true, web, port };
-  if ((positional[0] === 'codex' || positional[0] === 'claude') && positional[1] === 'scan') return { command: 'scan', target: positional[2], agent: positional[0], format, verbose, ui, web, port };
-  if (positional[0] === 'scan') return { command: 'scan', target: positional[1], agent, format, verbose, ui, web, port };
-  if (positional[0] === 'inspect' && positional[1]) return { command: 'inspect', target: positional.slice(1).join(' '), agent, format, verbose, ui, web, port };
-  if (positional[0] === 'serve') return { command: 'serve', target: positional[1], agent, format, verbose, ui, web: true, port };
-  if (!positional.length) return { command: 'tui', target: undefined, agent, format, verbose, ui: true, web, port };
-  throw new Error(usage());
+  return command(positional, flags);
 }
 
 function select(result: ScanResult, target: string): SessionInventory[] {
@@ -108,57 +132,31 @@ function resultFor(path: string | undefined, agent: AgentKind | undefined): Prom
 }
 
 function dashboardEnv(args: Arguments): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env, HOST: '127.0.0.1', PORT: String(args.port) };
+  // Session exports with screenshots run to several MB; adapter-node rejects request bodies over 512 KB by default.
+  const env: NodeJS.ProcessEnv = { BODY_SIZE_LIMIT: '64M', ...process.env, HOST: '127.0.0.1', PORT: String(args.port) };
   if (args.target) env.ASI_SESSIONS_PATH = resolve(args.target);
   if (args.agent) env.ASI_AGENT = args.agent;
   return env;
 }
 
-async function main(): Promise<void> {
-  const args = parse(process.argv);
-  if (args.command === 'serve' || args.web) {
-    const dashboard = join(packageRoot, 'dashboard');
-    console.log(`\n  ⚡ Agent Session Inspect Web Dashboard\n  http://127.0.0.1:${args.port}\n\n  Local-only · read-only · Ctrl+C to stop\n`);
-    const entry = join(packageRoot, 'dist', 'dashboard', 'index.js');
-    const built = existsSync(entry);
-    const child = spawn(built ? process.execPath : process.env.BUN_BINARY ?? 'bun', built ? [entry] : ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(args.port)], {
-      cwd: dashboard,
-      stdio: 'inherit',
-      env: dashboardEnv(args),
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code) => (code === 0 || code === null ? resolve() : reject(new Error(`Dashboard exited with code ${code}`))));
-    });
-    return;
-  }
-  if (args.command === 'tui' || args.ui) {
-    const result = await resultFor(args.target, args.agent);
-    await startTui(result);
-    return;
-  }
-  if (args.command === 'scan') {
-    const result = await resultFor(args.target, args.agent);
-    console.log(args.format === 'json' ? JSON.stringify(result, null, 2) : renderScan(result, args.verbose));
-    return;
-  }
-  if (args.command === 'serve') {
-    const dashboard = join(packageRoot, 'dashboard');
-    console.log(`\n  Agent Session Inspect dashboard\n  http://127.0.0.1:${args.port}\n\n  Local-only · read-only · Ctrl+C to stop\n`);
-    const entry = join(packageRoot, 'dist', 'dashboard', 'index.js');
-    const built = existsSync(entry);
-    const child = spawn(built ? process.execPath : process.env.BUN_BINARY ?? 'bun', built ? [entry] : ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(args.port)], {
-      cwd: dashboard,
-      stdio: 'inherit',
-      env: dashboardEnv(args),
-    });
-    await new Promise<void>((resolve, reject) => {
-      child.once('error', reject);
-      child.once('exit', (code) => (code === 0 || code === null ? resolve() : reject(new Error(`Dashboard exited with code ${code}`))));
-    });
-    return;
-  }
+async function runDashboard(args: Arguments): Promise<void> {
+  const dashboard = join(packageRoot, 'dashboard');
+  console.log(`\n  ⚡ Agent Session Inspect Web Dashboard\n  http://127.0.0.1:${args.port}\n\n  Local-only · read-only · Ctrl+C to stop\n`);
+  const entry = join(packageRoot, 'dist', 'dashboard', 'index.js');
+  const built = existsSync(entry);
+  const executable = built ? process.execPath : process.env.BUN_BINARY ?? 'bun';
+  const child = spawn(executable, built ? [entry] : ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(args.port)], {
+    cwd: dashboard,
+    stdio: 'inherit',
+    env: dashboardEnv(args),
+  });
+  await new Promise<void>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code) => (code === 0 || code === null ? resolve() : reject(new Error(`Dashboard exited with code ${code}`))));
+  });
+}
 
+async function inspect(args: Arguments): Promise<void> {
   const target = args.target!;
   const result = await resultFor(existsSync(target) ? target : undefined, args.agent);
   const matches = select(result, target);
@@ -168,6 +166,18 @@ async function main(): Promise<void> {
     throw new Error(`More than one session matched. Use an ID or file path:\n${choices.join('\n')}`);
   }
   console.log(args.format === 'json' ? JSON.stringify({ schemaVersion: 1, session: matches[0] }, null, 2) : renderInspect(matches[0], args.verbose));
+}
+
+async function main(): Promise<void> {
+  const args = parse(process.argv);
+  if (args.command === 'serve' || args.web) return runDashboard(args);
+  if (args.command === 'tui' || args.ui) return startTui(await resultFor(args.target, args.agent));
+  if (args.command === 'scan') {
+    const result = await resultFor(args.target, args.agent);
+    console.log(args.format === 'json' ? JSON.stringify(result, null, 2) : renderScan(result, args.verbose));
+    return;
+  }
+  return inspect(args);
 }
 
 main().catch((error) => {

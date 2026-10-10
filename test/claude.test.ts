@@ -133,6 +133,7 @@ test('assembles Claude Code conversation, tool timing, edits and usage', async (
         ['user', 'Add a greeting file'],
         ['assistant', 'Created hello.txt.'],
         ['user', 'Now edit it'],
+        ['assistant', ''],
         ['user', '[Request interrupted by user for tool use]'],
       ],
     );
@@ -150,15 +151,34 @@ test('assembles Claude Code conversation, tool timing, edits and usage', async (
     assert.equal(reply.task?.status, 'completed');
     assert.equal(reply.task?.durationMs, 7000);
 
-    // The interrupted turn produced no assistant text, so its edit stays visible as unattached activity.
-    const [unattached] = detail.debug.unattachedActivities;
-    assert.equal(unattached.edits[0].files[0].diff, '--- a/work/demo-app/hello.txt\n+++ b/work/demo-app/hello.txt\n@@ -1,1 +1,1 @@\n-hi\n+hello');
+    // The interrupted turn produced no assistant text; its tool work stays in the conversation as a text-less reply.
+    const toolOnly = detail.conversation[3];
+    assert.equal(toolOnly.phase, 'tool_activity');
+    assert.equal(toolOnly.activity?.task?.status, 'aborted');
+    assert.equal(detail.debug.unattachedActivities.length, 0);
+    assert.equal(toolOnly.activity!.edits[0].files[0].diff, '--- a/work/demo-app/hello.txt\n+++ b/work/demo-app/hello.txt\n@@ -1,1 +1,1 @@\n-hi\n+hello');
     assert.deepEqual(detail.debug.hiddenMessages.map((message) => message.role), ['meta', 'system:compact_boundary']);
 
     assert.equal(detail.usage.modelStepCount, 4);
     assert.equal(detail.usage.snapshots.length, 4);
     assert.equal(detail.usage.latest?.usage.totalTokens, 4 * 1160);
     assert.equal(detail.usage.modelStepTotal.cachedInputTokens, 4000);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('titles a Claude Code session that only ran local slash commands by those commands', async () => {
+  const directory = tempDirectory();
+  try {
+    const command = (uuid: string, name: string) => ({ ...base, type: 'system', subtype: 'local_command', uuid, timestamp: '2026-09-03T10:00:00.000Z', content: `<command-name>${name}</command-name>\n<command-args></command-args>` });
+    writeLog(join(directory, 'projects', '-work-demo-app', `${sessionId}.jsonl`), [
+      command('c1', '/login'),
+      { ...base, type: 'system', subtype: 'local_command', uuid: 'c2', content: '<local-command-stdout>ok</local-command-stdout>' },
+      command('c3', '/skills'),
+    ]);
+    const [session] = (await scanClaude(join(directory, 'projects'))).sessions;
+    assert.deepEqual(session.displayTitle, { value: '/login, /skills', source: 'session_event' });
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
