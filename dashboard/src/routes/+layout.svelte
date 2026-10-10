@@ -1,7 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
-	import { onMount, type Snippet } from 'svelte';
+	import { onMount, untrack, type Snippet } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { page, navigating } from '$app/state';
 	import { resolve } from '$app/paths';
@@ -40,8 +40,8 @@
 		deselectAllProjects,
 		isProjectSelected
 	} from '$lib/preferences.svelte';
-	import { extractProjectName, formatCompactTokens } from '$lib/project';
-	import type { SessionInventory } from '../../../src/types.ts';
+	import { agentLabel, extractProjectName, formatCompactTokens } from '$lib/project';
+	import type { AgentKind, SessionInventory } from '../../../src/types.ts';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -49,6 +49,10 @@
 	let query = $state('');
 	let sessionFilter = $state<'all' | 'recent' | 'heavy' | 'pinned' | 'imported'>('all');
 	let viewMode = $state<'projects' | 'flat'>('flat');
+	// Start on the agent of the session being opened so server-rendered HTML already shows the right tab.
+	let agentTab = $state<AgentKind>(
+		untrack(() => data.inventory.sessions.find((s) => s.id === page.params.id)?.agent ?? 'codex')
+	);
 	let isProjectDropdownOpen = $state(false);
 	let importLoading = $state(false);
 	let importError = $state<string | null>(null);
@@ -75,6 +79,11 @@
 			viewMode = savedViewMode;
 		}
 
+		const savedAgentTab = localStorage.getItem('asi_agent_tab');
+		if (!page.params.id && (savedAgentTab === 'codex' || savedAgentTab === 'claude')) {
+			agentTab = savedAgentTab;
+		}
+
 		const savedSessionFilter = localStorage.getItem('asi_session_filter');
 		if (
 			savedSessionFilter === 'all' ||
@@ -94,9 +103,28 @@
 
 		const list = sessionFilter === 'imported' ? importedSessionsList() : regularSessions();
 		if (list.length > 0) {
-			goto(resolve('/session/[id]', { id: list[0].id }), { replaceState: true });
+			goto(sessionHref(list[0]), { replaceState: true });
 		}
 	});
+
+	// Opening a session of the other agent (link, history, search) switches the sidebar to its tab.
+	$effect(() => {
+		const id = page.params.id;
+		if (!id || importedIds.has(id)) return;
+		const session = data.inventory.sessions.find((s) => s.id === id);
+		if (!session || isNestedSubagent(session)) return;
+		const agent = sessionAgent(session);
+		if (untrack(() => agentTab) !== agent) agentTab = agent;
+	});
+
+	function setAgentTab(agent: AgentKind) {
+		agentTab = agent;
+		if (typeof window !== 'undefined') localStorage.setItem('asi_agent_tab', agent);
+		const current = data.inventory.sessions.find((s) => s.id === page.params.id);
+		if (sessionFilter === 'imported' || (current && sessionAgent(current) === agent)) return;
+		const list = regularSessions();
+		if (list.length > 0) goto(sessionHref(list[0]));
+	}
 
 	export function setViewMode(mode: 'projects' | 'flat') {
 		viewMode = mode;
@@ -166,6 +194,43 @@
 	// Track which sessions were imported
 	const importedIds = $derived(new SvelteSet(data.importedSessionIds ?? []));
 
+	// Claude Code sessions, local or imported, open in their own view; Codex uses the shared page.
+	const sessionHref = (session: SessionInventory) =>
+		session.agent === 'claude'
+			? resolve('/claude/session/[id]', { id: session.id })
+			: resolve('/session/[id]', { id: session.id });
+
+	// Exports from older versions carry no agent and were always Codex.
+	const sessionAgent = (session: SessionInventory): AgentKind => session.agent ?? 'codex';
+
+	// Claude Code subagent sidechains are listed under their parent's Subagents tab, not as top-level sessions.
+	const isNestedSubagent = (session: SessionInventory) =>
+		session.agent === 'claude' && (session.relationships ?? []).some((r) => r.type === 'parent');
+
+	const agentCounts = $derived.by(() => {
+		const counts: Record<AgentKind, number> = { codex: 0, claude: 0 };
+		for (const s of data.inventory.sessions) {
+			if (!importedIds.has(s.id) && !isNestedSubagent(s)) counts[sessionAgent(s)] += 1;
+		}
+		return counts;
+	});
+
+	// Falls back to whichever agent has sessions when the saved tab has none (e.g. ASI_AGENT limits the scan).
+	const activeAgent = $derived<AgentKind>(
+		agentCounts[agentTab] > 0 || agentCounts[agentTab === 'codex' ? 'claude' : 'codex'] === 0
+			? agentTab
+			: agentTab === 'codex'
+				? 'claude'
+				: 'codex'
+	);
+
+	/** Local (non-imported) sessions of the selected agent. */
+	const agentSessions = $derived(
+		data.inventory.sessions.filter(
+			(s) => !importedIds.has(s.id) && !isNestedSubagent(s) && sessionAgent(s) === activeAgent
+		)
+	);
+
 	// Pre-map parent session IDs to child sessions for O(1) multi-agent resolution
 	const parentToChildrenMap = $derived.by(() => {
 		const map = new SvelteMap<string, SvelteSet<string>>();
@@ -207,8 +272,10 @@
 		return allIds.size;
 	}
 
-	const title = (session?: SessionInventory | { displayTitle?: { value?: string } }) =>
-		session?.displayTitle?.value ?? 'Untitled Codex session';
+	const title = (
+		session?:
+			SessionInventory | { displayTitle?: { value?: string }; agent?: SessionInventory['agent'] }
+	) => session?.displayTitle?.value ?? `Untitled ${agentLabel(session)} session`;
 	const date = (value?: string) => value?.slice(0, 10) ?? 'Unknown date';
 	const number = (value?: number) =>
 		value === undefined ? '—' : new Intl.NumberFormat('en-US').format(value);
@@ -217,7 +284,7 @@
 
 	// Available user projects for dropdown selector sorted by latest session activity
 	const availableProjects = $derived.by(() => {
-		const regular = data.inventory.sessions.filter((s) => !importedIds.has(s.id));
+		const regular = agentSessions;
 		const map = new SvelteMap<
 			string,
 			{ key: string; name: string; path?: string; count: number; latestActivity: number }
@@ -237,13 +304,10 @@
 		return Array.from(map.values()).sort((a, b) => b.latestActivity - a.latestActivity);
 	});
 
-	const regularSessionsTotalCount = $derived(
-		data.inventory.sessions.filter((s) => !importedIds.has(s.id)).length
-	);
+	const regularSessionsTotalCount = $derived(agentSessions.length);
 
 	const ungroupedSessionsCount = $derived.by(() => {
-		const regular = data.inventory.sessions.filter((s) => !importedIds.has(s.id));
-		return regular.filter((s) => getSessionProject(s).name === 'General / No Project').length;
+		return agentSessions.filter((s) => getSessionProject(s).name === 'General / No Project').length;
 	});
 
 	const allProjectKeys = $derived.by(() => {
@@ -269,15 +333,13 @@
 	});
 
 	const pinnedSessionsList = $derived.by(() => {
-		const regular = data.inventory.sessions.filter((s) => !importedIds.has(s.id));
-		return regular.filter((s) => pinnedSessions.has(s.id));
+		return agentSessions.filter((s) => pinnedSessions.has(s.id));
 	});
 
 	// Filter and sort session list
 	const regularSessions = () => {
 		if (sessionFilter === 'imported') return [];
-		let list = data.inventory.sessions.filter((session) => {
-			if (importedIds.has(session.id)) return false;
+		let list = agentSessions.filter((session) => {
 			if (sessionFilter === 'pinned' && !pinnedSessions.has(session.id)) return false;
 
 			const proj = getSessionProject(session);
@@ -550,7 +612,15 @@
 					<span class="hidden text-xs font-semibold text-(--muted) sm:inline"
 						>Workspace Inspector</span
 					>
-					{#if page.data.detail}
+					{#if page.data.view}
+						<span class="hidden text-(--line) sm:inline">|</span>
+						<span
+							class="max-w-75 truncate font-mono text-xs font-medium text-(--ink)"
+							title={page.data.view.title ?? 'Untitled Claude Code session'}
+						>
+							{page.data.view.title ?? 'Untitled Claude Code session'}
+						</span>
+					{:else if page.data.detail}
 						<span class="hidden text-(--line) sm:inline">|</span>
 						<span
 							class="max-w-75 truncate font-mono text-xs font-medium text-(--ink)"
@@ -562,6 +632,11 @@
 				</div>
 
 				<div class="flex items-center gap-3">
+					<nav class="hidden items-center gap-3 text-xs font-semibold text-(--muted) md:flex">
+						<a href={resolve('/search')} class="no-underline hover:text-(--ink)">Search</a>
+						<a href={resolve('/files')} class="no-underline hover:text-(--ink)">Files</a>
+						<a href={resolve('/habits')} class="no-underline hover:text-(--ink)">Habits</a>
+					</nav>
 					<a
 						href={resolve('/import')}
 						class="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-2.5 py-1 text-xs font-bold text-indigo-400 no-underline transition-colors hover:bg-indigo-500 hover:text-white"
@@ -654,6 +729,37 @@
 					</div>
 				</div>
 
+				<!-- Agent Switcher: Codex and Claude Code sessions are listed separately -->
+				{#if agentCounts.codex > 0 && agentCounts.claude > 0}
+					<div
+						class="grid grid-cols-2 gap-1 rounded-lg border border-(--line) bg-(--field) p-1"
+						role="tablist"
+						aria-label="Agent"
+					>
+						{#each [{ agent: 'codex', label: 'Codex' }, { agent: 'claude', label: 'Claude Code' }] as const as tab (tab.agent)}
+							<button
+								type="button"
+								role="tab"
+								aria-selected={activeAgent === tab.agent}
+								class="flex cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-bold whitespace-nowrap transition-all {activeAgent ===
+								tab.agent
+									? 'bg-indigo-600 text-white shadow-xs'
+									: 'text-(--muted) hover:bg-(--panel-subtle) hover:text-(--ink)'}"
+								onclick={() => setAgentTab(tab.agent)}
+								title="Show {tab.label} sessions"
+							>
+								<Bot class="h-3.5 w-3.5" />
+								<span>{tab.label}</span>
+								<span
+									class="rounded-full px-1.5 font-mono text-[10px] {activeAgent === tab.agent
+										? 'bg-white/20'
+										: 'bg-(--panel-subtle)'}">{agentCounts[tab.agent]}</span
+								>
+							</button>
+						{/each}
+					</div>
+				{/if}
+
 				<div class="search-wrapper">
 					<Search class="search-icon h-4 w-4" />
 					<input
@@ -670,6 +776,15 @@
 						</button>
 					{/if}
 				</div>
+				{#if query.trim().length > 1}
+					<!-- eslint-disable svelte/no-navigation-without-resolve -- resolved path plus a query string -->
+					<a
+						href={`${resolve('/search')}?q=${encodeURIComponent(query.trim())}`}
+						class="block truncate text-[11px] text-(--muted) no-underline hover:text-(--ink)"
+						>Search inside every session for “{query.trim()}” →</a
+					>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
+				{/if}
 				<!-- Clear Segmented Sidebar Filter Control -->
 				<div
 					class="grid grid-cols-5 gap-1 rounded-lg border border-(--line) bg-(--field) p-1 text-xs"
@@ -859,7 +974,7 @@
 								{@const subCount = getSubagentCount(session)}
 								{@const proj = getSessionProject(session)}
 								<a
-									href={resolve('/session/[id]', { id: session.id })}
+									href={sessionHref(session)}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}
@@ -894,6 +1009,9 @@
 											<span class="inline-flex items-center gap-1 font-mono">
 												<Clock class="h-3 w-3" />
 												{date(session.startedAt)}
+											</span>
+											<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+												{agentLabel(session)}
 											</span>
 											{#if proj.name !== 'General / No Project'}
 												<span
@@ -951,7 +1069,7 @@
 							{#each importedSessionsList() as session (session.id)}
 								{@const subCount = getSubagentCount(session)}
 								<a
-									href={resolve('/session/[id]', { id: session.id })}
+									href={sessionHref(session)}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}
@@ -999,6 +1117,9 @@
 											<Clock class="h-3 w-3" />
 											{date(session.startedAt)}
 										</span>
+										<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+											{agentLabel(session)}
+										</span>
 										<div class="flex shrink-0 items-center gap-1.5">
 											{#if subCount > 0}
 												<span
@@ -1028,7 +1149,7 @@
 
 				{#if sessionFilter !== 'imported' && regularSessions().length > 0}
 					{#if viewMode === 'projects'}
-						<!-- Project Grouped View (Codex / ChatGPT App Style) -->
+						<!-- Project Grouped View (ChatGPT App Style) -->
 						{#if groupedProjects.length > 0 || ungroupedSessions.length > 0}
 							<div class="divide-y divide-(--line)">
 								<!-- 1. Grouped Projects -->
@@ -1102,7 +1223,7 @@
 												{#each group.sessions as session (session.id)}
 													{@const subCount = getSubagentCount(session)}
 													<a
-														href={resolve('/session/[id]', { id: session.id })}
+														href={sessionHref(session)}
 														data-sveltekit-preload-code="viewport"
 														data-sveltekit-preload-data="hover"
 														class:active={page.params.id === session.id}
@@ -1144,6 +1265,9 @@
 															<span class="inline-flex items-center gap-1 font-mono">
 																<Clock class="h-3 w-3" />
 																{date(session.startedAt)}
+															</span>
+															<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+																{agentLabel(session)}
 															</span>
 															<div class="flex shrink-0 items-center gap-1.5">
 																{#if subCount > 0}
@@ -1194,7 +1318,7 @@
 											{#each ungroupedSessions as session (session.id)}
 												{@const subCount = getSubagentCount(session)}
 												<a
-													href={resolve('/session/[id]', { id: session.id })}
+													href={sessionHref(session)}
 													data-sveltekit-preload-code="viewport"
 													data-sveltekit-preload-data="hover"
 													class:active={page.params.id === session.id}
@@ -1237,6 +1361,9 @@
 															<Clock class="h-3 w-3" />
 															{date(session.startedAt)}
 														</span>
+														<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+															{agentLabel(session)}
+														</span>
 														<div class="flex shrink-0 items-center gap-1.5">
 															{#if subCount > 0}
 																<span
@@ -1277,7 +1404,7 @@
 								{@const subCount = getSubagentCount(session)}
 								{@const proj = getSessionProject(session)}
 								<a
-									href={resolve('/session/[id]', { id: session.id })}
+									href={sessionHref(session)}
 									data-sveltekit-preload-code="viewport"
 									data-sveltekit-preload-data="hover"
 									class:active={page.params.id === session.id}
@@ -1318,6 +1445,9 @@
 											<span class="inline-flex items-center gap-1 font-mono">
 												<Clock class="h-3 w-3" />
 												{date(session.startedAt)}
+											</span>
+											<span class="font-mono text-[9px] uppercase opacity-80" title="Agent">
+												{agentLabel(session)}
 											</span>
 											{#if proj.name !== 'General / No Project'}
 												<span

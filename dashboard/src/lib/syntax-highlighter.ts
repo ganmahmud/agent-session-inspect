@@ -87,6 +87,20 @@ interface Rule {
 	cls: string;
 }
 
+/** Whole-word match for any of the space-separated words. */
+function words(list: string, flags = 'g'): RegExp {
+	return new RegExp(String.raw`\b(${list.split(' ').join('|')})\b`, flags);
+}
+
+function escapeRegex(token: string): string {
+	return token.replaceAll(/[.*+?^${}()|[\]\\/-]/g, String.raw`\$&`);
+}
+
+/** Matches any of the space-separated literal tokens; list longer tokens first. */
+function tokens(list: string): RegExp {
+	return new RegExp(`(${list.split(' ').map(escapeRegex).join('|')})`, 'g');
+}
+
 const JS_TS_RULES: Rule[] = [
 	{ pattern: /\/\/[^\n]*/g, cls: 'syn-cmt' },
 	{ pattern: /\/\*[\s\S]*?\*\//g, cls: 'syn-cmt' },
@@ -94,21 +108,24 @@ const JS_TS_RULES: Rule[] = [
 	{ pattern: /"(?:\\[\s\S]|[^"\\])*"/g, cls: 'syn-str' },
 	{ pattern: /'(?:\\[\s\S]|[^'\\])*'/g, cls: 'syn-str' },
 	{
-		pattern:
-			/\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|default|class|extends|interface|type|enum|implements|public|private|protected|readonly|static|get|set|async|await|yield|import|export|from|as|new|delete|typeof|instanceof|void|this|super|throw|try|catch|finally)\b/g,
+		pattern: words(
+			'const let var function return if else for while do switch case break continue default class extends interface type enum implements public private protected readonly static get set async await yield import export from as new delete typeof instanceof void this super throw try catch finally'
+		),
 		cls: 'syn-kwd'
 	},
-	{ pattern: /\b(true|false|null|undefined|NaN|Infinity)\b/g, cls: 'syn-lit' },
+	{ pattern: words('true false null undefined NaN Infinity'), cls: 'syn-lit' },
 	{
-		pattern:
-			/\b(string|number|boolean|symbol|bigint|any|unknown|never|void|object|Array|Record|Promise|Map|Set|Date|RegExp|Error)\b/g,
+		pattern: words(
+			'string number boolean symbol bigint any unknown never void object Array Record Promise Map Set Date RegExp Error'
+		),
 		cls: 'syn-typ'
 	},
-	{ pattern: /\b([A-Z][a-zA-Z0-9_$]*)\b/g, cls: 'syn-typ' },
-	{ pattern: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*(?=\()/g, cls: 'syn-fn' },
-	{ pattern: /\b0x[a-fA-F0-9]+\b|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, cls: 'syn-num' },
+	{ pattern: /\b([A-Z][\w$]*)\b/g, cls: 'syn-typ' },
+	{ pattern: /\b([a-zA-Z_$][\w$]*)\s*(?=\()/g, cls: 'syn-fn' },
+	{ pattern: /\b0x[a-fA-F0-9]+\b/g, cls: 'syn-num' },
+	{ pattern: /\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b/g, cls: 'syn-num' },
 	{
-		pattern: /(=>|===|!==|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|&|\||\^|~|<<|>>|\?|:)/g,
+		pattern: tokens('=> === !== == != <= >= && || ++ -- += -= *= /= %= & | ^ ~ << >> ? :'),
 		cls: 'syn-op'
 	}
 ];
@@ -125,8 +142,8 @@ const SVELTE_HTML_RULES: Rule[] = [
 	{ pattern: /\{#(if|each|await|key|snippet)\b[^}]*\}/g, cls: 'syn-block' },
 	{ pattern: /\{:(else|then|catch)\b[^}]*\}/g, cls: 'syn-block' },
 	{ pattern: /\{\/(if|each|await|key|snippet)\}/g, cls: 'syn-block' },
-	{ pattern: /<\/?[a-zA-Z0-9_:-]+(?=[\s>/]|$)/g, cls: 'syn-tag' },
-	{ pattern: /\b[a-zA-Z0-9_:-]+(?==)/g, cls: 'syn-attr' },
+	{ pattern: /<\/?[\w:-]+(?=[\s>/]|$)/g, cls: 'syn-tag' },
+	{ pattern: /\b[\w:-]+(?==)/g, cls: 'syn-attr' },
 	{ pattern: /"[^"]*"|'[^']*'/g, cls: 'syn-str' },
 	{ pattern: /\{[^{}]*\}/g, cls: 'syn-expr' }
 ];
@@ -135,13 +152,14 @@ const CSS_RULES: Rule[] = [
 	{ pattern: /\/\*[\s\S]*?\*\//g, cls: 'syn-cmt' },
 	{ pattern: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g, cls: 'syn-str' },
 	{ pattern: /@[a-zA-Z-]+/g, cls: 'syn-kwd' },
-	{ pattern: /--[a-zA-Z0-9_-]+/g, cls: 'syn-var' },
+	{ pattern: /--[\w-]+/g, cls: 'syn-var' },
 	{ pattern: /\b[a-zA-Z-]+(?=\s*:)/g, cls: 'syn-prop' },
 	{ pattern: /#[a-fA-F0-9]{3,8}\b/g, cls: 'syn-num' },
 	{ pattern: /\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw|%|s|ms|deg|fr)\b/g, cls: 'syn-num' },
 	{
-		pattern:
-			/\b(important|auto|inherit|initial|none|block|flex|grid|absolute|relative|fixed|sticky)\b/g,
+		pattern: words(
+			'important auto inherit initial none block flex grid absolute relative fixed sticky'
+		),
 		cls: 'syn-lit'
 	}
 ];
@@ -151,15 +169,16 @@ const PYTHON_RULES: Rule[] = [
 	{ pattern: /"""[\s\S]*?"""|'''[\s\S]*?'''/g, cls: 'syn-cmt' },
 	{ pattern: /f?"(?:\\[\s\S]|[^"\\])*"|f?'(?:\\[\s\S]|[^'\\])*'/g, cls: 'syn-str' },
 	{
-		pattern:
-			/\b(def|class|return|if|elif|else|for|while|try|except|finally|with|as|import|from|global|nonlocal|lambda|pass|break|continue|yield|async|await|raise|assert|del|in|is|not|and|or)\b/g,
+		pattern: words(
+			'def class return if elif else for while try except finally with as import from global nonlocal lambda pass break continue yield async await raise assert del in is not and or'
+		),
 		cls: 'syn-kwd'
 	},
 	{ pattern: /\b(True|False|None)\b/g, cls: 'syn-lit' },
-	{ pattern: /\b([A-Z][a-zA-Z0-9_]*)\b/g, cls: 'syn-typ' },
-	{ pattern: /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g, cls: 'syn-fn' },
+	{ pattern: /\b([A-Z]\w*)\b/g, cls: 'syn-typ' },
+	{ pattern: /\b([a-zA-Z_]\w*)\s*(?=\()/g, cls: 'syn-fn' },
 	{ pattern: /\b0x[a-fA-F0-9]+\b|\b\d+(?:\.\d+)?\b/g, cls: 'syn-num' },
-	{ pattern: /(@[a-zA-Z0-9_.]+)/g, cls: 'syn-var' }
+	{ pattern: /(@[\w.]+)/g, cls: 'syn-var' }
 ];
 
 const GO_RULES: Rule[] = [
@@ -167,33 +186,37 @@ const GO_RULES: Rule[] = [
 	{ pattern: /\/\*[\s\S]*?\*\//g, cls: 'syn-cmt' },
 	{ pattern: /`[^`]*`|"(?:\\[\s\S]|[^"\\])*"/g, cls: 'syn-str' },
 	{
-		pattern:
-			/\b(package|import|func|return|var|type|struct|interface|map|chan|const|if|else|for|range|switch|case|default|select|go|defer|break|continue|fallthrough)\b/g,
+		pattern: words(
+			'package import func return var type struct interface map chan const if else for range switch case default select go defer break continue fallthrough'
+		),
 		cls: 'syn-kwd'
 	},
 	{ pattern: /\b(true|false|nil|iota)\b/g, cls: 'syn-lit' },
 	{
-		pattern:
-			/\b(string|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|bool|byte|rune|error|any)\b/g,
+		pattern: words(
+			'string int int8 int16 int32 int64 uint uint8 uint16 uint32 uint64 float32 float64 bool byte rune error any'
+		),
 		cls: 'syn-typ'
 	},
-	{ pattern: /\b([A-Z][a-zA-Z0-9_]*)\b/g, cls: 'syn-typ' },
-	{ pattern: /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g, cls: 'syn-fn' },
+	{ pattern: /\b([A-Z]\w*)\b/g, cls: 'syn-typ' },
+	{ pattern: /\b([a-zA-Z_]\w*)\s*(?=\()/g, cls: 'syn-fn' },
 	{ pattern: /\b\d+(?:\.\d+)?\b/g, cls: 'syn-num' }
 ];
 
 const SHELL_RULES: Rule[] = [
 	{ pattern: /#[^\n]*/g, cls: 'syn-cmt' },
 	{ pattern: /"(?:\\[\s\S]|[^"\\])*"|'[^']*'/g, cls: 'syn-str' },
-	{ pattern: /\$[a-zA-Z0-9_]+|\$\{[^}]+\}/g, cls: 'syn-var' },
+	{ pattern: /\$\w+|\$\{[^}]+\}/g, cls: 'syn-var' },
 	{
-		pattern:
-			/\b(if|then|else|elif|fi|case|esac|for|while|until|do|done|in|function|select|time|return|exit|export|source|alias|set|unset|local)\b/g,
+		pattern: words(
+			'if then else elif fi case esac for while until do done in function select time return exit export source alias set unset local'
+		),
 		cls: 'syn-kwd'
 	},
 	{
-		pattern:
-			/\b(cd|ls|grep|rg|cat|echo|mkdir|rm|cp|mv|touch|find|curl|wget|git|npm|node|npx|pnpm|yarn|docker|sudo|chmod|chown)\b/g,
+		pattern: words(
+			'cd ls grep rg cat echo mkdir rm cp mv touch find curl wget git npm node npx pnpm yarn docker sudo chmod chown'
+		),
 		cls: 'syn-fn'
 	},
 	{ pattern: /--?[a-zA-Z0-9-]+/g, cls: 'syn-prop' }
@@ -205,10 +228,10 @@ const MARKDOWN_RULES: Rule[] = [
 	{ pattern: /`[^`]+`/g, cls: 'syn-str' },
 	{ pattern: /^\s*[-*+]\s+/g, cls: 'syn-op' },
 	{ pattern: /^\s*\d+\.\s+/g, cls: 'syn-num' },
-	{ pattern: /^[a-zA-Z0-9_-]+(?=\s*:)/g, cls: 'syn-prop' },
-	{ pattern: /:\s*(.+)$/g, cls: 'syn-str' },
+	{ pattern: /^[\w-]+(?=\s*:)/g, cls: 'syn-prop' },
+	{ pattern: /:.+/g, cls: 'syn-str' }, // one line at a time: runs to the line end
 	{
-		pattern: /\b(Draft|Approved|Pending|Active|Done|Closed|True|False|true|false|null)\b/gi,
+		pattern: words('Draft Approved Pending Active Done Closed True False true false null', 'gi'),
 		cls: 'syn-lit'
 	},
 	{ pattern: /\b\d{4}-\d{2}-\d{2}\b/g, cls: 'syn-num' }
@@ -216,18 +239,18 @@ const MARKDOWN_RULES: Rule[] = [
 
 const YAML_RULES: Rule[] = [
 	{ pattern: /#[^\n]*/g, cls: 'syn-cmt' },
-	{ pattern: /^[a-zA-Z0-9_-]+(?=\s*:)/g, cls: 'syn-prop' },
+	{ pattern: /^[\w-]+(?=\s*:)/g, cls: 'syn-prop' },
 	{ pattern: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g, cls: 'syn-str' },
-	{ pattern: /\b(true|false|null|yes|no|Draft|Approved|Pending)\b/gi, cls: 'syn-lit' },
+	{ pattern: words('true false null yes no Draft Approved Pending', 'gi'), cls: 'syn-lit' },
 	{ pattern: /\b\d{4}-\d{2}-\d{2}\b|\b\d+(?:\.\d+)?\b/g, cls: 'syn-num' },
 	{ pattern: /^\s*-\s+/g, cls: 'syn-op' }
 ];
 
 const GENERIC_RULES: Rule[] = [
 	{ pattern: /\/\/[^\n]*|#[^\n]*/g, cls: 'syn-cmt' },
-	{ pattern: /^[a-zA-Z0-9_-]+(?=\s*:)/g, cls: 'syn-prop' },
+	{ pattern: /^[\w-]+(?=\s*:)/g, cls: 'syn-prop' },
 	{ pattern: /"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'/g, cls: 'syn-str' },
-	{ pattern: /\b(true|false|null|nil|None|Draft|Approved)\b/gi, cls: 'syn-lit' },
+	{ pattern: words('true false null nil None Draft Approved', 'gi'), cls: 'syn-lit' },
 	{ pattern: /\b\d+(?:\.\d+)?\b/g, cls: 'syn-num' }
 ];
 

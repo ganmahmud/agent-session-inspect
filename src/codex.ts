@@ -52,6 +52,7 @@ function usage(value: unknown): TokenUsage | undefined {
 function emptySession(id: string, file: string): MutableSession {
   return {
     id,
+    agent: 'codex',
     displayTitle: { value: null, source: 'absent' },
     sourceFiles: [file],
     cliVersions: [],
@@ -71,7 +72,7 @@ function emptySession(id: string, file: string): MutableSession {
   };
 }
 
-function updateTime(session: MutableSession, timestamp: string | undefined): void {
+export function updateTime(session: { startedAt?: string; updatedAt?: string }, timestamp: string | undefined): void {
   if (!timestamp) return;
   if (!session.startedAt || timestamp < session.startedAt) session.startedAt = timestamp;
   if (!session.updatedAt || timestamp > session.updatedAt) session.updatedAt = timestamp;
@@ -103,18 +104,21 @@ export function normalizeCodexRecord(record: JsonRecord, file: string, line: num
   };
 }
 
+// Path classification only: nothing is read from or written to these locations.
+const TEMP_PATH_PREFIXES = ['/tmp/', '/private/tmp/', '/var/folders/', '/private/var/']; // NOSONAR
+
 export function isSystemOrTempPath(pathStr: string): boolean {
   const normalized = pathStr.replace(/\\/g, '/').toLowerCase();
-  if (
-    normalized.startsWith('/tmp/') ||
-    normalized.startsWith('/private/tmp/') ||
-    normalized.startsWith('/var/folders/') ||
-    normalized.startsWith('/private/var/') ||
+  return (
+    TEMP_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix)) ||
     normalized.includes('/appdata/local/temp/')
-  ) {
-    return true;
-  }
-  return false;
+  );
+}
+
+function trimTrailingSeparators(value: string): string {
+  let end = value.length;
+  while (end > 0 && (value[end - 1] === '/' || value[end - 1] === '\\')) end -= 1;
+  return value.slice(0, end);
 }
 
 export function extractProjectName(cwd?: string, explicitName?: string): string | undefined {
@@ -122,7 +126,7 @@ export function extractProjectName(cwd?: string, explicitName?: string): string 
     return explicitName.trim();
   }
   if (!cwd || !cwd.trim()) return undefined;
-  const trimmed = cwd.trim().replace(/[\\/]+$/, '');
+  const trimmed = trimTrailingSeparators(cwd.trim());
   if (!trimmed) return undefined;
   if (isSystemOrTempPath(trimmed)) return undefined;
 
@@ -149,6 +153,11 @@ function observeMetadata(session: MutableSession, payload: JsonRecord, timestamp
   if (version && !session.cliVersions.includes(version)) session.cliVersions.push(version);
   addRelationship(session, 'parent', asText(payload.parent_thread_id));
   addRelationship(session, 'fork', asText(payload.forked_from_id));
+  const git = asRecord(payload.git);
+  if (git && !session.git) {
+    const context = { branch: asText(git.branch), commit: asText(git.commit_hash), repositoryUrl: asText(git.repository_url) };
+    if (context.branch || context.commit || context.repositoryUrl) session.git = context;
+  }
   updateTime(session, timestamp ?? asText(payload.timestamp));
 }
 
@@ -219,7 +228,7 @@ function knownRecord(recordType: string, payloadType: string | undefined): boole
   return false;
 }
 
-function collectFiles(path: string): string[] {
+export function collectFiles(path: string): string[] {
   const target = resolve(path);
   try {
     if (!existsSync(target)) return [];
@@ -309,6 +318,7 @@ function mergeSessions(target: MutableSession, source: MutableSession): void {
   for (const rel of source.relationships) {
     addRelationship(target, rel.type, rel.sessionId);
   }
+  target.git ??= source.git;
   updateTime(target, source.startedAt);
   updateTime(target, source.updatedAt);
   if (source.titleFromLog) {
@@ -373,6 +383,21 @@ async function scanFileCached(
   }
 }
 
+function sessionFor(sessions: Map<string, MutableSession>, id: string, file: string): MutableSession {
+  const session = sessions.get(id) ?? emptySession(id, file);
+  sessions.set(id, session);
+  if (!session.sourceFiles.includes(file)) session.sourceFiles.push(file);
+  return session;
+}
+
+function parseRecord(text: string): JsonRecord | undefined {
+  try {
+    return asRecord(JSON.parse(text)) ?? {};
+  } catch {
+    return undefined;
+  }
+}
+
 async function scanFile(file: string, sessions: Map<string, MutableSession>, diagnostics: ScanResult['diagnostics']): Promise<void> {
   let currentId: string | undefined;
   const input = createInterface({ input: createReadStream(file, { encoding: 'utf8' }), crlfDelay: Infinity });
@@ -381,38 +406,40 @@ async function scanFile(file: string, sessions: Map<string, MutableSession>, dia
   for await (const text of input) {
     line += 1;
     if (!text.trim()) continue;
-    let record: JsonRecord;
-    try {
-      record = asRecord(JSON.parse(text)) ?? {};
-    } catch {
+    const record = parseRecord(text);
+    if (!record) {
       diagnostics.malformedRecords += 1;
       const current = currentId ? sessions.get(currentId) : undefined;
       if (current) current.malformedRecords += 1;
       continue;
     }
 
-    const recordType = asText(record.type) ?? 'unknown';
     const payload = asRecord(record.payload) ?? {};
     const timestamp = asText(record.timestamp);
-    if (recordType === 'session_meta') currentId = asText(payload.session_id) ?? asText(payload.id) ?? currentId;
+    if (record.type === 'session_meta') currentId = asText(payload.session_id) ?? asText(payload.id) ?? currentId;
     if (!currentId) continue;
 
-    const session = sessions.get(currentId) ?? emptySession(currentId, file);
-    sessions.set(currentId, session);
-    if (!session.sourceFiles.includes(file)) session.sourceFiles.push(file);
+    const session = sessionFor(sessions, currentId, file);
     session.recordCount += 1;
     updateTime(session, timestamp);
 
-    const normalized = normalizeCodexRecord(record, file, line);
-    increment(session, normalized.kind);
-    const payloadType = asText(payload.type);
-    if (!knownRecord(recordType, payloadType)) session.unknownRecords += 1;
-
-    if (recordType === 'session_meta') observeMetadata(session, payload, timestamp);
-    if (recordType === 'event_msg' && payloadType) observeEvent(session, payloadType, payload, timestamp);
-    if (recordType === 'response_item' && payloadType) observeResponseItem(session, payloadType);
-    if (recordType === 'compacted') session.compactionCount += 1;
+    observeRecord(session, record, file, line);
   }
+}
+
+function observeRecord(session: MutableSession, record: JsonRecord, file: string, line: number): void {
+  const recordType = asText(record.type) ?? 'unknown';
+  const payload = asRecord(record.payload) ?? {};
+  const timestamp = asText(record.timestamp);
+  const normalized = normalizeCodexRecord(record, file, line);
+  increment(session, normalized.kind);
+  const payloadType = asText(payload.type);
+  if (!knownRecord(recordType, payloadType)) session.unknownRecords += 1;
+
+  if (recordType === 'session_meta') observeMetadata(session, payload, timestamp);
+  if (recordType === 'event_msg' && payloadType) observeEvent(session, payloadType, payload, timestamp);
+  if (recordType === 'response_item' && payloadType) observeResponseItem(session, payloadType);
+  if (recordType === 'compacted') session.compactionCount += 1;
 }
 
 function chooseCatalogTitle(session: MutableSession, titles: CatalogTitle[]): CatalogTitle | undefined {
@@ -456,7 +483,11 @@ export async function scanCodex(path: string, options: ScanOptions = {}): Promis
 }
 
 export function displayName(session: SessionInventory): string {
-  return session.displayTitle.value ?? 'Untitled Codex session';
+  return session.displayTitle.value ?? `Untitled ${agentLabel(session)} session`;
+}
+
+export function agentLabel(session: Pick<SessionInventory, 'agent'>): string {
+  return session.agent === 'claude' ? 'Claude Code' : 'Codex';
 }
 
 export function shortId(id: string): string {

@@ -15,7 +15,7 @@
 	</div>
 	<h2 class="text-lg font-bold text-(--ink)">No local sessions discovered</h2>
 	<p class="mt-1 max-w-md text-xs text-(--muted)">
-		No Codex agent sessions were found in your local workspace directory. You can import offline
+		No Codex or Claude Code sessions were found in your local session directories. You can import offline
 		session logs or single message snippets right now.
 	</p>
 

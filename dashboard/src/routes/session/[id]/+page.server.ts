@@ -1,8 +1,19 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { sessionDetail, getSessionSubagents } from '$lib/server/session-data';
+import {
+	sessionDetail,
+	getSessionSubagents,
+	sessionInventory,
+	isClaudeSession
+} from '$lib/server/session-data';
 
-export const load: PageServerLoad = async ({ params }) => {
+export const load: PageServerLoad = async ({ params, url }) => {
+	// Claude Code sessions (local or imported) have their own view; `?view=analytics` keeps the shared token analytics page.
+	if (url.searchParams.get('view') !== 'analytics') {
+		const inventory = await sessionInventory();
+		const session = inventory.sessions.find((item) => item.id === params.id);
+		if (isClaudeSession(params.id, session)) redirect(307, `/claude/session/${params.id}`);
+	}
 	try {
 		const detail = await sessionDetail(params.id);
 		if (!detail) {

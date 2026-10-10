@@ -148,7 +148,7 @@
 					Why Were Tokens Spent?
 				</h4>
 				<p class="text-[11px] font-medium text-(--muted)">
-					Simple breakdown of User vs Codex side token consumption for this turn
+					Simple breakdown of User vs agent side token consumption for this turn
 				</p>
 			</div>
 		</div>
@@ -261,7 +261,7 @@
 		</div>
 	</div>
 
-	<!-- Simple Side-by-Side: User Side vs Codex Side -->
+	<!-- Simple Side-by-Side: User Side vs Agent Side -->
 	<div class="grid gap-3 sm:grid-cols-2">
 		<!-- User Side Card (Prompt, Context, Cache) -->
 		<div class="space-y-2 rounded-xl border border-blue-500/25 bg-blue-500/5 p-3.5 text-xs">
@@ -291,12 +291,12 @@
 			</div>
 		</div>
 
-		<!-- Codex Side Card (Tools, Reasoning, Response) -->
+		<!-- Agent Side Card (Tools, Reasoning, Response) -->
 		<div class="space-y-2 rounded-xl border border-purple-500/25 bg-purple-500/5 p-3.5 text-xs">
 			<div class="flex items-center justify-between border-b border-purple-500/20 pb-2">
 				<span class="flex items-center gap-1.5 font-bold text-purple-700 dark:text-purple-300">
 					<Sparkles class="h-4 w-4 text-purple-500" />
-					Codex Side (Work & Response)
+					Agent Side (Work & Response)
 				</span>
 				<b class="font-mono text-xs text-(--ink)"
 					>~{number(stats.totalOutput + toolPayloads.totalToolEstTokens)} tokens</b

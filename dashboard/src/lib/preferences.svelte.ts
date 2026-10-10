@@ -5,64 +5,45 @@ export const pinnedSessions = new SvelteSet<string>();
 export const collapsedProjects = new SvelteSet<string>();
 export const selectedProjects = new SvelteSet<string>(); // empty means "all"
 
+const PINNED_KEY = 'asi_pinned_sessions';
+const COLLAPSED_KEY = 'asi_collapsed_projects';
+const SELECTED_KEY = 'asi_selected_projects';
+const NONE = '__NONE__';
+
 let isInitialized = false;
+
+function loadSet(target: SvelteSet<string>, key: string, label: string) {
+	try {
+		const raw = localStorage.getItem(key);
+		const values: unknown = raw ? JSON.parse(raw) : undefined;
+		if (!Array.isArray(values)) return;
+		target.clear();
+		for (const value of values) target.add(value);
+	} catch (e) {
+		console.warn(`Failed to load ${label} from localStorage`, e);
+	}
+}
+
+function saveSet(target: SvelteSet<string>, key: string) {
+	if (typeof window !== 'undefined') localStorage.setItem(key, JSON.stringify(Array.from(target)));
+}
+
+function toggle(target: SvelteSet<string>, value: string) {
+	if (target.has(value)) target.delete(value);
+	else target.add(value);
+}
 
 export function initPreferences() {
 	if (typeof window === 'undefined' || isInitialized) return;
 	isInitialized = true;
-
-	// 1. Load Pinned Sessions
-	try {
-		const rawPinned = localStorage.getItem('asi_pinned_sessions');
-		if (rawPinned) {
-			const arr = JSON.parse(rawPinned);
-			if (Array.isArray(arr)) {
-				pinnedSessions.clear();
-				for (const id of arr) pinnedSessions.add(id);
-			}
-		}
-	} catch (e) {
-		console.warn('Failed to load pinned sessions from localStorage', e);
-	}
-
-	// 2. Load Collapsed Projects
-	try {
-		const rawCollapsed = localStorage.getItem('asi_collapsed_projects');
-		if (rawCollapsed) {
-			const arr = JSON.parse(rawCollapsed);
-			if (Array.isArray(arr)) {
-				collapsedProjects.clear();
-				for (const key of arr) collapsedProjects.add(key);
-			}
-		}
-	} catch (e) {
-		console.warn('Failed to load collapsed projects from localStorage', e);
-	}
-
-	// 3. Load Selected Projects
-	try {
-		const rawSelected = localStorage.getItem('asi_selected_projects');
-		if (rawSelected) {
-			const arr = JSON.parse(rawSelected);
-			if (Array.isArray(arr)) {
-				selectedProjects.clear();
-				for (const key of arr) selectedProjects.add(key);
-			}
-		}
-	} catch (e) {
-		console.warn('Failed to load selected projects from localStorage', e);
-	}
+	loadSet(pinnedSessions, PINNED_KEY, 'pinned sessions');
+	loadSet(collapsedProjects, COLLAPSED_KEY, 'collapsed projects');
+	loadSet(selectedProjects, SELECTED_KEY, 'selected projects');
 }
 
 export function togglePinSession(sessionId: string) {
-	if (pinnedSessions.has(sessionId)) {
-		pinnedSessions.delete(sessionId);
-	} else {
-		pinnedSessions.add(sessionId);
-	}
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('asi_pinned_sessions', JSON.stringify(Array.from(pinnedSessions)));
-	}
+	toggle(pinnedSessions, sessionId);
+	saveSet(pinnedSessions, PINNED_KEY);
 }
 
 export function isPinned(sessionId: string): boolean {
@@ -70,66 +51,48 @@ export function isPinned(sessionId: string): boolean {
 }
 
 export function toggleProjectCollapse(projectKey: string) {
-	if (collapsedProjects.has(projectKey)) {
-		collapsedProjects.delete(projectKey);
-	} else {
-		collapsedProjects.add(projectKey);
-	}
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('asi_collapsed_projects', JSON.stringify(Array.from(collapsedProjects)));
-	}
+	toggle(collapsedProjects, projectKey);
+	saveSet(collapsedProjects, COLLAPSED_KEY);
 }
 
 export function isProjectSelected(projectKey: string): boolean {
 	if (selectedProjects.size === 0) return true;
-	if (selectedProjects.has('__NONE__')) return false;
+	if (selectedProjects.has(NONE)) return false;
 	return selectedProjects.has(projectKey);
 }
 
 export function toggleProjectSelection(projectKey: string, allKeys: string[]) {
-	if (selectedProjects.has('__NONE__')) {
-		selectedProjects.delete('__NONE__');
+	if (selectedProjects.has(NONE)) {
+		// Nothing selected: start a selection with this project.
+		selectedProjects.delete(NONE);
 		selectedProjects.add(projectKey);
 	} else if (selectedProjects.size === 0) {
+		// Everything selected: deselect just this project.
 		for (const k of allKeys) {
 			if (k !== projectKey) selectedProjects.add(k);
 		}
 	} else {
-		if (selectedProjects.has(projectKey)) {
-			selectedProjects.delete(projectKey);
-			if (selectedProjects.size === 0) {
-				selectedProjects.add('__NONE__');
-			}
-		} else {
-			selectedProjects.add(projectKey);
-			if (selectedProjects.size === allKeys.length) {
-				selectedProjects.clear();
-			}
-		}
+		toggle(selectedProjects, projectKey);
+		if (selectedProjects.size === 0) selectedProjects.add(NONE);
+		else if (selectedProjects.size === allKeys.length) selectedProjects.clear();
 	}
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('asi_selected_projects', JSON.stringify(Array.from(selectedProjects)));
-	}
+	saveSet(selectedProjects, SELECTED_KEY);
 }
 
 export function selectAllProjects() {
 	selectedProjects.clear();
 	if (typeof window !== 'undefined') {
-		localStorage.removeItem('asi_selected_projects');
+		localStorage.removeItem(SELECTED_KEY);
 	}
 }
 
 export function deselectAllProjects() {
 	selectedProjects.clear();
-	selectedProjects.add('__NONE__');
-	if (typeof window !== 'undefined') {
-		localStorage.setItem('asi_selected_projects', JSON.stringify(['__NONE__']));
-	}
+	selectedProjects.add(NONE);
+	saveSet(selectedProjects, SELECTED_KEY);
 }
 
+/** Same as selecting all: an empty selection means every project. */
 export function clearSelectedProjects() {
-	selectedProjects.clear();
-	if (typeof window !== 'undefined') {
-		localStorage.removeItem('asi_selected_projects');
-	}
+	selectAllProjects();
 }

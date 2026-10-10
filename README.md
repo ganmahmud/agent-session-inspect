@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/npm/l/@ganmahmud/agent-session-inspect.svg?style=flat-square&color=green)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/ganmahmud/agent-session-inspect.svg?style=flat-square)](https://github.com/ganmahmud/agent-session-inspect/stargazers)
 
-> **Local-first inspection tool, terminal TUI, and web dashboard for Codex agent session logs.**
+> **Local-first inspection tool, terminal TUI, and web dashboard for Codex and Claude Code agent session logs.**
 
 ![Agent Session Inspect Web Dashboard](assets/web-dashboard.png)
 
@@ -40,8 +40,12 @@ npx @ganmahmud/agent-session-inspect
 # Interactive Web Dashboard (--web)
 npx @ganmahmud/agent-session-inspect --web
 
-# Terminal Scan Summary
-npx @ganmahmud/agent-session-inspect codex scan
+# Terminal Scan Summary (Codex + Claude Code)
+npx @ganmahmud/agent-session-inspect scan
+
+# Only one agent's sessions (works with every command)
+npx @ganmahmud/agent-session-inspect claude scan
+npx @ganmahmud/agent-session-inspect --web --agent claude
 
 # Inspect Specific Session or Exported JSON File
 npx @ganmahmud/agent-session-inspect inspect "Session Title or ID"
@@ -71,6 +75,25 @@ Dual-pane keyboard & mouse interface with live project filtering (`p`), turn-by-
 
 ![Terminal TUI Dashboard](assets/terminal-tui.png)
 
+### 🧩 Codex & Claude Code Sessions Side by Side
+Reads Codex rollouts from `~/.codex/sessions` (`$CODEX_HOME`) and Claude Code transcripts from `~/.claude/projects` (`$CLAUDE_CONFIG_DIR`) into one inventory. Claude Code sessions get the same conversation timeline, per-request token usage (cache reads/writes and thinking tokens), tool timing, `Edit`/`Write` diffs, and `Task` subagent sessions. Pass `--agent codex|claude` to show only one.
+
+### 🧠 Claude Code Session View
+Claude Code sessions open in their own page (`/claude/session/<id>`), laid out like the Claude Code desktop transcript and going further:
+- Your messages, Claude's progress notes and its answers, with each run of tool calls on one plain-language line ("Ran 4 commands, edited 2 files (1 failed)") that opens to every call, its result and diff. Screenshots show inline.
+- **Cost per message and per step**, split from the cost Claude Code records so the parts add up to the session total.
+- **Cache expiry**: points out where a break longer than the prompt cache lifetime (or a model switch) forced the whole context to be re-cached, and what that cost.
+- **Worth a look**: repeated failures, re-run commands, slow steps and the message that took most of the spend, each linking to the step.
+- Context-over-time chart, subagents with their own totals rolled up, a review of every change the session made (including edits made by shell commands), replay with a scrubber, and a live view with a running cost while a session is in progress.
+- **Ask about this session**: questions such as "What changed and why?" or "Write a PR description" are answered by your local `claude` CLI from a summary of the session, with no tools (see Privacy below).
+- Copy, export or select individual messages; copy the command to resume the session in a terminal.
+
+### 🔎 Search, File History, Habits and Compare
+- **Search** (`/search`): every prompt, reply and command across all Codex and Claude Code sessions.
+- **File history** (`/files`): every file an agent edited, with each session that changed it, the diff and the message that asked for it.
+- **Habits** (`/habits`): spend by week and project, where the time goes, what keeps failing, context that is loaded on every request but rarely used, things you keep telling Claude (to move into CLAUDE.md), and commands the permission checks blocked.
+- **Compare** (`/compare`): two Claude Code sessions side by side on cost, time, steps, failures and files changed.
+
 ### 🗂️ Project-Based Session Grouping & Overview
 Automatically classifies sessions by workspace project directory. Access dedicated project overview pages with aggregated token footprints and active session counts.
 
@@ -85,13 +108,15 @@ Token footprint breakdown, prompt cache efficiency, reasoning overhead metrics, 
 ![Session Diagnostics & Analytics](assets/web-analytics.png)
 
 ### 🤖 Subagent & Multi-Agent Telemetry
-Track delegated subagent executions (`subagent_activity`, `delegate_task`) with dedicated execution timing and multi-agent interaction telemetry.
+Track delegated subagent executions (Codex `subagent_activity`, `delegate_task`; Claude Code `Task` sidechains) with dedicated execution timing and multi-agent interaction telemetry.
 
 ### 📦 Standalone Session Export & Drag-and-Drop Import
 Download complete sessions or isolated message interactions as JSON; drag-and-drop JSON files in the web UI to inspect ephemeral sessions in-memory without database writes.
 
 ### 🔒 100% Local & Privacy-Preserving
-Parses local `~/.codex/sessions` logs directly in read-only mode with file-based scan caching without uploading data to external servers or modifying local files.
+Parses local `~/.codex/sessions` and `~/.claude/projects` logs directly in read-only mode with file-based scan caching without uploading data to external servers or modifying local files.
+
+The one exception is **Ask about this session**, and only when you use it: it pipes a text summary of that session to your own `claude` CLI (`claude -p` with no tools, no MCP servers and no saved session), which sends it to Anthropic like any Claude Code request and bills your plan. Set `ASI_CLAUDE_BIN` to point at a different CLI binary.
 
 ---
 

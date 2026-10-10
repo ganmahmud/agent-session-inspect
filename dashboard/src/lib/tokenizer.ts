@@ -6,11 +6,20 @@ export interface TokenCountResult {
 let encoder: { encode: (text: string) => { length: number } } | null = null;
 let attempted = false;
 
+// Pre-tokenizer splits matching tiktoken cl100k_base, tried in order.
+const BPE_PARTS = [
+	String.raw`'(?:[stmd]|re|ve|ll)`, // contractions
+	String.raw` ?\p{L}+`, // words
+	String.raw` ?\p{N}+`, // numbers
+	String.raw` ?[^\s\p{L}\p{N}]+`, // punctuation runs
+	String.raw`\s+(?!\S)`, // trailing whitespace
+	String.raw`\s+`
+];
+const BPE_SPLIT = new RegExp(BPE_PARTS.join('|'), 'gu');
+
 function estimateTokens(text: string): number {
 	if (!text) return 0;
-	// BPE regex matching tiktoken cl100k_base token splits
-	const bpeRegex = /'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+/gu;
-	const matches = text.match(bpeRegex);
+	const matches = text.match(BPE_SPLIT);
 	if (!matches) return 0;
 
 	let count = 0;
