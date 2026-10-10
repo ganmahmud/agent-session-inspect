@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [1.0.0] - 2026-10-10
+
 ### Added
 - **Claude Code Support**: Claude Code transcripts (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects`) are scanned alongside Codex sessions in the CLI, TUI and web dashboard.
   - Token usage is deduplicated per API response and mapped onto the existing fields (input includes cache reads and writes; thinking tokens count as reasoning output).
